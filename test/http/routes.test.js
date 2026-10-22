@@ -1,0 +1,275 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+process.env.MONGODB_URI ??= "mongodb://127.0.0.1:27017/mock_only";
+const { createApp } = await import("../../src/app.js");
+
+const quietLogger = {
+  info() {},
+  warn() {},
+  error() {},
+};
+
+function makeMemoryAlertService() {
+  const records = [];
+  let nextId = 1;
+  const keyFor = (detection) => `${detection.api_name ?? "unknown"}|${[...detection.anomaly_types].sort().join("|")}`;
+  return {
+    records,
+    async findActiveAlertForDetection(detection) {
+      return records.find((record) => record.status === "active" && record.dedupe_key === keyFor(detection)) ?? null;
+    },
+    async saveAlert(detection, inputSnapshot, message, messageSource) {
+      const existing = await this.findActiveAlertForDetection(detection);
+      if (existing) {
+        existing.input_snapshot = inputSnapshot;
+        existing.message = message;
+        existing.message_source = messageSource;
+        existing.occurrence_count += 1;
+        existing.updatedAt = new Date();
+        return existing;
+      }
+      const now = new Date();
+      const record = {
+        _id: String(nextId++).padStart(24, "0"),
+        api_name: detection.api_name ?? "unknown",
+        anomaly_types: [...detection.anomaly_types].sort(),
+        severity: detection.severity,
+        message,
+        message_source: messageSource,
+        input_snapshot: inputSnapshot,
+        status: "active",
+        dedupe_key: keyFor(detection),
+        occurrence_count: 1,
+        createdAt: now,
+        updatedAt: now,
+      };
+      records.push(record);
+      return record;
+    },
+    async listActiveAlerts() {
+      return records.filter((record) => record.status === "active")
+        .sort((left, right) => right.createdAt - left.createdAt);
+    },
+    async resolveAlertById(id) {
+      const record = records.find((item) => item._id === id && item.status === "active");
+      if (record) record.status = "resolved";
+      return record ?? null;
+    },
+  };
+}
+
+async function withServer(options, run) {
+  const app = createApp({ appLogger: quietLogger, logRequests: false, ...options });
+  const server = await new Promise((resolve) => {
+    const instance = app.listen(0, "127.0.0.1", () => resolve(instance));
+  });
+  const { port } = server.address();
+  try {
+    await run(`http://127.0.0.1:${port}`);
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+}
+
+const sample = [
+  { api_name: "PatientDataAPI", response_time_ms: 1200, status_code: 200, records_returned: 50 },
+  { api_name: "AppointmentAPI", response_time_ms: 5500, status_code: 500, records_returned: 0 },
+];
+
+test("GET /health keeps its existing disconnected response shape", async () => {
+  await withServer({}, async (base) => {
+    const response = await fetch(`${base}/health`);
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { status: "unavailable", database: "disconnected" });
+  });
+});
+
+test("POST /monitor handles the assessment sample and skips healthy items", async () => {
+  const alertService = makeMemoryAlertService();
+  let llmCalls = 0;
+  await withServer({
+    alertService,
+    llmService: { async generateAlertMessage() { llmCalls += 1; return { message: "AppointmentAPI failed.", source: "model" }; } },
+  }, async (base) => {
+    const response = await fetch(`${base}/monitor`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(sample),
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      total_items: 2,
+      healthy_count: 1,
+      anomalies_created: 1,
+      anomalies_updated: 0,
+      failed_items: 0,
+      results: [
+        { api_name: "PatientDataAPI", status: "healthy", severity: "none", alert_id: null },
+        { api_name: "AppointmentAPI", status: "created", severity: "critical", alert_id: "000000000000000000000001" },
+      ],
+    });
+  });
+  assert.equal(llmCalls, 1);
+  assert.equal(alertService.records.length, 1);
+});
+
+test("POST /monitor rejects non-array input with consistent JSON error", async () => {
+  await withServer({}, async (base) => {
+    const response = await fetch(`${base}/monitor`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ api_name: "x" }),
+    });
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: { code: "INVALID_BATCH", message: "Request body must be a JSON array." } });
+  });
+});
+
+test("mixed batch saves a malformed item as validation anomaly and continues", async () => {
+  const alertService = makeMemoryAlertService();
+  await withServer({ alertService, llmService: { async generateAlertMessage() { return { message: "Fallback.", source: "fallback" }; } } }, async (base) => {
+    const response = await fetch(`${base}/monitor`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify([sample[0], null, { ...sample[1], api_name: "OtherAPI" }]),
+    });
+    const result = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(result.total_items, 3);
+    assert.equal(result.healthy_count, 1);
+    assert.equal(result.failed_items, 0);
+    assert.equal(result.anomalies_created, 2);
+    assert.equal(result.results[1].status, "created");
+    assert.equal(result.results[1].api_name, null);
+    assert.ok(alertService.records.some((alert) => alert.anomaly_types.includes("validation_anomaly")));
+  });
+});
+
+test("duplicate submission increments occurrence count without another LLM call", async () => {
+  const alertService = makeMemoryAlertService();
+  let llmCalls = 0;
+  await withServer({
+    alertService,
+    llmService: { async generateAlertMessage() { llmCalls += 1; return { message: "Saved message.", source: "model" }; } },
+  }, async (base) => {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = await fetch(`${base}/monitor`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify([sample[1]]),
+      });
+      const summary = await response.json();
+      assert.equal(response.status, 200);
+      assert.equal(summary[attempt === 0 ? "anomalies_created" : "anomalies_updated"], 1);
+    }
+  });
+  assert.equal(llmCalls, 1);
+  assert.equal(alertService.records[0].occurrence_count, 2);
+});
+
+test("an active fallback alert retries Gemini on update, then reuses the model message", async () => {
+  const alertService = makeMemoryAlertService();
+  const fallbackAlert = await alertService.saveAlert({
+    api_name: "AppointmentAPI",
+    anomaly_types: [
+      "http_status_failure_critical",
+      "records_returned_anomaly",
+      "response_time_critical",
+    ],
+    severity: "critical",
+  }, sample[1], "Old fallback message.", "fallback");
+  let llmCalls = 0;
+
+  await withServer({
+    alertService,
+    llmService: { async generateAlertMessage() {
+      llmCalls += 1;
+      return { message: "Fresh model message.", source: "model" };
+    } },
+  }, async (base) => {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = await fetch(base + "/monitor", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify([sample[1]]),
+      });
+      const summary = await response.json();
+      assert.equal(response.status, 200);
+      assert.equal(summary.anomalies_updated, 1);
+      assert.equal(summary.results[0].alert_id, fallbackAlert._id);
+    }
+  });
+
+  assert.equal(llmCalls, 1);
+  assert.equal(fallbackAlert.occurrence_count, 3);
+  assert.equal(fallbackAlert.message, "Fresh model message.");
+  assert.equal(fallbackAlert.message_source, "model");
+});
+
+test("POST /monitor respects configured concurrency and preserves input order", async () => {
+  let active = 0;
+  let maximumActive = 0;
+  const checks = Array.from({ length: 10 }, (_, index) => ({
+    api_name: `API${index}`, response_time_ms: 6000, status_code: 200, records_returned: 1,
+  }));
+  const alertService = makeMemoryAlertService();
+  await withServer({
+    alertService,
+    monitorSettings: { concurrency: 3 },
+    llmService: { async generateAlertMessage() {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 8));
+      active -= 1;
+      return { message: "Slow response.", source: "fallback" };
+    } },
+  }, async (base) => {
+    const response = await fetch(`${base}/monitor`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(checks),
+    });
+    const result = await response.json();
+    assert.equal(response.status, 200);
+    assert.deepEqual(result.results.map((item) => item.api_name), checks.map((item) => item.api_name));
+  });
+  assert.equal(maximumActive, 3);
+});
+
+test("GET /alerts returns active alert list newest first", async () => {
+  const alertService = makeMemoryAlertService();
+  const old = await alertService.saveAlert({ api_name: "Old", anomaly_types: ["records_returned_anomaly"], severity: "warning" }, {}, "Old.", "fallback");
+  await new Promise((resolve) => setTimeout(resolve, 2));
+  const newest = await alertService.saveAlert({ api_name: "New", anomaly_types: ["records_returned_anomaly"], severity: "warning" }, {}, "New.", "fallback");
+  await withServer({ alertService }, async (base) => {
+    const response = await fetch(`${base}/alerts`);
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(body.alerts.map((item) => item._id), [newest._id, old._id]);
+    assert.equal(body.alerts[0].status, "active");
+  });
+});
+
+test("PATCH resolve succeeds, unknown id is 404, and malformed id is 400", async () => {
+  const alertService = makeMemoryAlertService();
+  const saved = await alertService.saveAlert({ api_name: "ResolveMe", anomaly_types: ["records_returned_anomaly"], severity: "warning" }, {}, "Resolve me.", "fallback");
+  await withServer({ alertService }, async (base) => {
+    const resolved = await fetch(`${base}/alerts/${saved._id}/resolve`, { method: "PATCH" });
+    assert.equal(resolved.status, 200);
+    assert.equal((await resolved.json()).alert.status, "resolved");
+    const unknown = await fetch(`${base}/alerts/000000000000000000000099/resolve`, { method: "PATCH" });
+    assert.equal(unknown.status, 404);
+    const invalid = await fetch(`${base}/alerts/not-an-id/resolve`, { method: "PATCH" });
+    assert.equal(invalid.status, 400);
+  });
+});
+
+test("POST /monitor enforces the configured maximum batch size", async () => {
+  await withServer({ monitorSettings: { maxBatchSize: 1 } }, async (base) => {
+    const response = await fetch(`${base}/monitor`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify([sample[0], sample[0]]),
+    });
+    assert.equal(response.status, 413);
+    assert.equal((await response.json()).error.code, "BATCH_TOO_LARGE");
+  });
+});
+
+test("POST /monitor enforces the configured request body size", async () => {
+  await withServer({ monitorSettings: { bodyLimit: "1b" } }, async (base) => {
+    const response = await fetch(`${base}/monitor`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: "[]",
+    });
+    assert.equal(response.status, 413);
+    assert.equal((await response.json()).error.code, "BODY_TOO_LARGE");
+  });
+});
