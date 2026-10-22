@@ -1,4 +1,4 @@
-﻿# AI Prompts Log
+# AI Prompts Log
 
 This file records the user's project instructions and prompts as requested. It will be updated as the project progresses.
 
@@ -65,7 +65,7 @@ This file records the user's project instructions and prompts as requested. It w
 
 ## 2026-10-21 - Atlas connection string shared
 
-> mongodb+srv://ismamhossain2000_db_user:<db_password>@ismam.z1lafov.mongodb.net/
+> mongodb+srv://<db_user>:<db_password>@<cluster-host>/
 
 **Result:** Provided step-by-step Atlas connection, environment setup, and connectivity troubleshooting guidance; credential values are omitted from this log.
 
@@ -77,7 +77,7 @@ This file records the user's project instructions and prompts as requested. It w
 
 ## 2026-10-21 - Atlas URI repeated
 
-> mongodb+srv://ismamhossain2000_db_user:<db_password>@ismam.z1lafov.mongodb.net/
+> mongodb+srv://<db_user>:<db_password>@<cluster-host>/
 
 **Result:** Provided step-by-step Atlas connection, environment setup, and connectivity troubleshooting guidance; credential values are omitted from this log.
 
@@ -468,3 +468,16 @@ This file records the user's project instructions and prompts as requested. It w
 > Do not start any other step. Summarize and wait for my approval.
 
 **Result:** Updated the README fallback example and Gemini troubleshooting guidance; clarified fallback/model message reuse, retry behavior, and the accepted-input scope in the architecture guide. No code or environment files changed.
+
+## 2026-10-23 - Documentation cleanup and Git publication
+
+> Documentation cleanup only. No code changes, do not touch .env, do not print secrets.
+>
+> 1. README.md: remove the troubleshooting bullet about "cd /d" in PowerShell and the E:\ path example. Remove the "Publish to a new GitHub repository" section.
+> 2. AI_PROMPTS_LOG.md: replace the Atlas username and cluster host in the logged text with <db_user> and <cluster-host>. Do not rewrite or reword any of my prompts otherwise.
+> 3. Then run: git add -A, git status (show it), git commit with a short message, git push. The remote is already set to https://github.com/Ismam0044/Ai-Automation-project and the branch is master. Show the push output.
+> 4. Log this prompt in AI_PROMPTS_LOG.md.
+>
+> Do nothing else.
+
+**Result:** Removed the requested README content, replaced the logged Atlas identifiers with placeholders, and published the documentation-only commit to the configured `master` branch.

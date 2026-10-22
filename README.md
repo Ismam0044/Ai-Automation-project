@@ -246,22 +246,8 @@ Tests use mocked services and do not require a MongoDB connection or Gemini API 
 - **Atlas network error:** confirm the app machine's current public IP is in the Atlas project's Network Access / IP Access List. A changed network can mean the IP needs updating. Confirm the Atlas database username/password, cluster host, and URL encoding for special password characters.
 - **Gemini message falls back:** the alert is still stored with a template message. Check the server log for the failure reason, then check `GEMINI_API_KEY`, `GEMINI_MODEL`, model access, network connectivity, and `GEMINI_TIMEOUT_MS`. An HTTP 404 means the model name may be wrong or retired; 503 or 429 means Google may be busy or the quota may be used; 401 or 403 means the key may be wrong. `GEMINI_MODEL` must name a model your key can use; `gemini-3.8-flash` is an example that was working when this was written.
 - **`npm` is blocked in PowerShell on Windows:** use `npm.cmd` for commands, for example `npm.cmd install` and `npm.cmd run dev`.
-- **`cd /d` fails in PowerShell:** that is Command Prompt syntax. In PowerShell, run `Set-Location "E:\path\to\project"` or `cd "E:\path\to\project"`. Run each command on its own line.
 
 ## Architecture and video
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the component overview, request-flow diagram, assignment requirements versus implementation choices, and a timed 5–10 minute video outline.
 
-## Publish to a new GitHub repository
-
-First create a **new empty repository** on GitHub (do not initialize it with a README, license, or `.gitignore`). From the project root, run these commands and replace the URL with the new repository's HTTPS URL:
-
-```sh
-git init -b main
-git add .
-git commit -m "Initial project commit"
-git remote add origin https://github.com/<your-account>/<your-repository>.git
-git push -u origin main
-```
-
-`.gitignore` excludes local environment files and dependency/build directories. Before committing, check `git status` and confirm no `.env` or other credential file is staged.
