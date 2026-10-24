@@ -76,6 +76,19 @@ In Windows PowerShell, use `Copy-Item .env.example .env`.
 | `MONITORS_TOTAL_MAX` | Maximum monitor records across all workspaces | `1000` |
 | `WORKSPACE_INACTIVE_PURGE_DAYS` | Days of inactivity before a workspace and its monitor/link data are purged | `90` |
 | `WORKSPACE_ACCESS_LINK_TTL_MINUTES` | Lifetime of a single-use workspace transfer link | `15` |
+| `ALLOW_PRIVATE_TARGETS` | Permit local mock targets in development only; rejected in production | `false` |
+| `MONITOR_RESPONSE_MAX_BYTES` | Maximum monitor response size before aborting | `1048576` (1 MiB) |
+| `CHECK_HISTORY_RETENTION_DAYS` | Check history TTL retention | `14` |
+| `CHECK_HISTORY_MAX_PAGE_SIZE` | Maximum history page size | `50` |
+| `CHECK_NOW_WORKSPACE_WINDOW_MS` / `CHECK_NOW_WORKSPACE_MAX` | Manual check limit per workspace; 30 per hour by default | `3600000` / `30` |
+| `CHECK_NOW_MONITOR_WINDOW_MS` / `CHECK_NOW_MONITOR_MAX` | Manual check limit per monitor; 6 per hour by default | `3600000` / `6` |
+| `SCHEDULER_ENABLED` | Start the background scheduler | `true` |
+| `SCHEDULER_TICK_INTERVAL_MS` | Scheduler poll interval | `5000` |
+| `SCHEDULER_CONCURRENCY` | Maximum concurrent scheduled checks per process | `5` |
+| `SCHEDULER_MAX_CHECKS_PER_MINUTE` | Shared per-process cap for scheduled and manual checks | `60` |
+| `SCHEDULER_JITTER_MS` | Random scheduling delay up to this many milliseconds | `5000` |
+| `MONITOR_CHECK_LEASE_MS` | Minimum persisted check lease | `120000` |
+| `AUTO_RESOLVE_CONSECUTIVE_HEALTHY_CHECKS` | Healthy checks before automatic alert resolution | `2` |
 | `LOG_LEVEL` | Pino log level | `info` |
 
 The current values are listed in `.env.example`. Keep the model name as a value you have confirmed for your Gemini setup; the application does not choose one automatically.
@@ -183,28 +196,66 @@ curl -X POST http://127.0.0.1:3000/workspaces \
 
 Browser requests use the cookie automatically; API clients use the bearer header. A one-time device transfer link can be created with `POST /workspaces/:workspaceId/access-links`. Opening its page with GET does not consume it (so link preview scanners cannot use it); submitting its confirmation form consumes it once, then sets a new device cookie. Links expire after `WORKSPACE_ACCESS_LINK_TTL_MINUTES` (15 minutes by default).
 
-Monitor definitions are private to a workspace. A monitor stores `name` (1–100 characters), `url` (up to 2048 characters), `method` (`GET` or `HEAD`, default `GET`), `interval_seconds` (integer 60–86400, default 300), `timeout_ms` (integer 100–30000, default 5000), and optional safe dotted `records_field` (up to 128 characters). Limits default to 50 monitors per workspace and 1000 total. Workspace and its monitor/access-link data are purged after 90 inactive days by default; `WORKSPACE_INACTIVE_PURGE_DAYS` changes that retention. These values are configurable in `.env` using the table above.
+Monitor definitions are private to a workspace. A monitor stores `name` (1–100 characters), `url` (up to 2048 characters), `method` (`GET` only), `interval_seconds` (integer 60–86400, default 300), `timeout_ms` (integer 100–30000, default 5000), optional safe dotted `records_field` (up to 128 characters), `expected_status_code` (100–599, default 200), `max_response_time_ms` (default 3000), `expect_records` (default false), and `paused` (default false). Limits default to 50 monitors per workspace and 1000 total. Inactive workspace data is purged after 90 days by default.
 
-The app validates monitor URLs before saving: only HTTP/HTTPS on standard ports, without credentials, with public DNS addresses only. It does not poll or fetch the URL, and this API does not create alerts. The existing assessment endpoints (`POST /monitor` and `GET /alerts`) retain their current shared behavior and are not tied to these workspace definitions.
+The scheduler checks due, unpaused monitors. It uses GET only, a fixed app User-Agent, no cookies or authorization, a 1 MB response cap, a strict timeout and no redirects. It validates every DNS answer and pins a validated address for the socket while keeping the original host for TLS and the Host header. It validates again immediately before connecting. DNS rebinding and redirect-to-private-target paths are blocked. Response bodies are parsed only in memory to count records and then discarded. Check history stores status, response time, record count, outcome and timestamps; alert snapshots contain the four assessment fields. Monitor definitions necessarily store the configured name, URL and check settings.
+
+URLs must use HTTP or HTTPS and standard ports, contain no credentials, and resolve exclusively to public addresses. Set `ALLOW_PRIVATE_TARGETS=true` only for the bundled loopback mock server in development; it is rejected in production. The exception is limited to loopback addresses (127.0.0.0/8 and ::1) and custom ports. Other private network ranges remain blocked. The setting is false by default.
+
+The scheduler is enabled by default. It stores due times and short leases in MongoDB to prevent the same monitor running twice at once, uses jitter, bounded concurrency and a shared per-process cap for scheduled and manual checks. Paused monitors are skipped. A check can also be started immediately; this endpoint is separately rate limited per workspace and per monitor. Once the manual check begins, the next scheduled time advances by that monitor's interval. After the configured number of consecutive healthy checks (default 2), active alerts for that monitor are resolved with an automatic-resolution reason. A later failure creates a new alert.
+
+The scheduler and outgoing-check budget are process-local. The database lease prevents duplicate simultaneous checks across instances, but fair workspace rotation and the per-minute budget are not distributed. Before running multiple app instances, use a distributed scheduler/leader and shared global rate budget (for example, backed by MongoDB or Redis) and coordinate concurrency across instances.
 
 | Method and path | Purpose | Request body |
 | --- | --- | --- |
 | `POST /workspaces/:workspaceId/monitors` | Create a monitor | `{"name":"Public API","url":"https://api.example.org/health"}` |
 | `GET /workspaces/:workspaceId/monitors` | List this workspace's monitors | none |
 | `GET /workspaces/:workspaceId/monitors/:monitorId` | Read one monitor | none |
-| `PATCH /workspaces/:workspaceId/monitors/:monitorId` | Update either or both fields | `{"name":"Renamed API"}` |
+| `PATCH /workspaces/:workspaceId/monitors/:monitorId` | Update monitor settings | JSON fields to change |
 | `DELETE /workspaces/:workspaceId/monitors/:monitorId` | Delete a monitor | none |
+| `GET /workspaces/:workspaceId/monitors/:monitorId/checks?page=1&limit=20` | Paged check history, newest first | none |
+| `GET /workspaces/:workspaceId/monitors/:monitorId/summary` | Current state and response-time/uptime summary | none |
+| `POST /workspaces/:workspaceId/monitors/:monitorId/check` | Run one check now | none |
 
-Example create request (replace both placeholders with values returned or saved from workspace creation):
+The workspace bearer key or browser cookie is required for all these routes. Each operation checks the workspace scope.
 
-```sh
-curl -X POST http://127.0.0.1:3000/workspaces/<workspace-id>/monitors \
-  -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer <workspace-key>' \
-  --data '{"name":"Public API","url":"https://api.example.org/health"}'
+The mock server serves synthetic endpoints on localhost only. Start it in one terminal with `node scripts/demo/mock-apis.js`; it listens on port 4010 by default and provides `/healthy`, `/failing`, `/slow`, and `/empty`, plus a `/control` endpoint for switching its responses. For local monitor URLs, enable `ALLOW_PRIVATE_TARGETS=true` only in the development server terminal.
+PowerShell demo (run the mock server in terminal 1, then in terminal 2 set the local-only option and start the app):
+
+```powershell
+# Terminal 1
+node scripts/demo/mock-apis.js
+
+# Terminal 2: these settings apply to this terminal only
+$env:ALLOW_PRIVATE_TARGETS = "true"
+npm.cmd run dev
 ```
 
-The monitor URL guard allows only HTTP or HTTPS on standard ports, rejects credentials and local hostnames, and resolves the host before saving. Blocked IPv4 ranges include `0/8`, `10/8`, `100.64/10`, `127/8`, `169.254/16`, `172.16/12`, `192.0.0/24`, `192.0.2/24`, `192.88.99/24`, `192.168/16`, `198.18/15`, `198.51.100/24`, `203.0.113/24`, multicast `224/4`, and reserved `240/4`. IPv6 only allows global unicast `2000::/3`, with special-purpose/documentation ranges excluded; IPv4-mapped IPv6 is checked against the IPv4 rules. Every DNS answer must be public, including when a hostname returns multiple addresses. This validation does not make an HTTP request to the supplied URL. If a future scheduler fetches monitors, it must repeat these checks immediately before connecting and pin the checked DNS result to prevent DNS rebinding.
+In a third PowerShell window, create a workspace, create a monitor for the synthetic `/failing` endpoint, list it, and request a check:
+
+```powershell
+$base = "http://127.0.0.1:3000"
+$created = Invoke-RestMethod -Uri "$base/workspaces" -Method Post -Headers @{"X-Return-Workspace-Key"="true"} -ContentType "application/json" -Body (@{name="Local demo"} | ConvertTo-Json -Compress)
+$workspaceId = $created.workspace.id
+$headers = @{Authorization="Bearer $($created.access_key)"}
+$monitorBody = @{name="Demo failing API";url="http://127.0.0.1:4010/failing";interval_seconds=60;timeout_ms=5000;expected_status_code=200;expect_records=$false} | ConvertTo-Json -Compress
+$createdMonitor = Invoke-RestMethod -Uri "$base/workspaces/$workspaceId/monitors" -Method Post -Headers $headers -ContentType "application/json" -Body $monitorBody
+$monitorId = $createdMonitor.monitor._id
+Invoke-RestMethod -Uri "$base/workspaces/$workspaceId/monitors" -Headers $headers
+Invoke-RestMethod -Uri "$base/workspaces/$workspaceId/monitors/$monitorId/check" -Method Post -Headers $headers
+Invoke-RestMethod -Uri "$base/workspaces/$workspaceId/monitors/$monitorId/checks" -Headers $headers
+```
+
+Switch the synthetic endpoint to HTTP 500, request a check, and inspect the workspace-scoped alert. Then switch it back to healthy; the monitor will automatically resolve its active alert after two consecutive healthy scheduled checks (at a 60-second interval, allow about two minutes):
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:4010/control" -Method Post -ContentType "application/json" -Body (@{endpoint="failing";mode="failing"} | ConvertTo-Json -Compress)
+Invoke-RestMethod -Uri "$base/workspaces/$workspaceId/monitors/$monitorId/check" -Method Post -Headers $headers
+Invoke-RestMethod -Uri "$base/alerts" -Headers $headers
+Invoke-RestMethod -Uri "http://127.0.0.1:4010/control" -Method Post -ContentType "application/json" -Body (@{endpoint="failing";mode="healthy"} | ConvertTo-Json -Compress)
+Start-Sleep -Seconds 125
+Invoke-RestMethod -Uri "$base/alerts?status=resolved" -Headers $headers
+```
 
 ### `POST /monitor`
 
@@ -326,6 +377,7 @@ Tests use mocked services and do not require a MongoDB connection or Gemini API 
 ## Troubleshooting
 
 - **MongoDB connection refused / server will not start:** confirm local MongoDB is running, or check that `MONGODB_URI` in the root `.env` is correct and reachable. The app requires this variable at startup.
+- **Invalid namespace error:** remove the slash after the database name in `MONGODB_URI`, run `npm run check:env` to see a safe summary.
 - **Atlas network error:** confirm the app machine's current public IP is in the Atlas project's Network Access / IP Access List. A changed network can mean the IP needs updating. Confirm the Atlas database username/password, cluster host, and URL encoding for special password characters.
 - **Gemini message falls back:** the alert is still stored with a template message. Check the server log for the failure reason, then check `GEMINI_API_KEY`, `GEMINI_MODEL`, model access, network connectivity, and `GEMINI_TIMEOUT_MS`. An HTTP 404 means the model name may be wrong or retired; 503 or 429 means Google may be busy or the quota may be used; 401 or 403 means the key may be wrong. `GEMINI_MODEL` must name a model your key can use; `gemini-3.8-flash` is an example that was working when this was written.
 - **`npm` is blocked in PowerShell on Windows:** use `npm.cmd` for commands, for example `npm.cmd install` and `npm.cmd run dev`.
@@ -344,3 +396,11 @@ Leave `TRUST_PROXY=0` when the server directly receives client traffic. If deplo
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the component overview, request-flow diagram, assignment requirements versus implementation choices, and a timed 5–10 minute video outline.
 
+
+## Private workspaces and Monitors
+
+The browser creates a private workspace on first visit and keeps its access credential in an HttpOnly, SameSite cookie. The app does not ask you to copy an access key or store a workspace secret in browser storage. The Monitors view lets you add, edit, pause, resume, check, and delete public HTTP/HTTPS JSON endpoints. It shows recent check history, response-time trends, uptime summaries, and alerts tied to each monitor. A one-time, expiring workspace link can open the same workspace on another device; anyone holding that link can use it once, so share it carefully.
+
+The Monitors view polls every 15 seconds while the page is visible and stops polling while the browser tab is hidden. Its detail view pages check history and displays the summary fields returned by the workspace API. In Alerts, choose **My workspace** or **Shared demo** to switch alert sources; both sources retain the Active/Resolved tabs, API-name search, severity filter, and pagination.
+
+The Monitors page displays this privacy reminder: “Demo. Do not monitor private or sensitive systems. Only status, timing and record counts are stored. Anyone with your workspace link can see your monitors.” Do not enter URLs for private systems or sensitive data.

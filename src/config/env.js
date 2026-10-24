@@ -1,3 +1,5 @@
+import { parseAllowPrivateTargets, parseBooleanSetting } from "./privateTargets.js";
+
 const port = Number(process.env.PORT ?? 3000);
 const nodeEnv = process.env.NODE_ENV ?? "development";
 
@@ -27,6 +29,8 @@ if (!process.env.MONGODB_URI) {
   throw new Error("MONGODB_URI is required. Copy .env.example to .env and configure it.");
 }
 
+const allowPrivateTargets = parseAllowPrivateTargets(process.env.ALLOW_PRIVATE_TARGETS ?? "false", nodeEnv);
+
 const publicAppUrl = process.env.PUBLIC_APP_URL ?? "http://localhost:3000";
 let parsedPublicAppUrl;
 try {
@@ -55,6 +59,7 @@ export const env = Object.freeze({
   apiRateLimitWindowMs: positiveIntegerFromEnv("API_RATE_LIMIT_WINDOW_MS", 900000),
   apiRateLimitMax: positiveIntegerFromEnv("API_RATE_LIMIT_MAX", 120),
   geminiDailyCallLimit: positiveIntegerFromEnv("GEMINI_DAILY_CALL_LIMIT", 100),
+  geminiTimeoutMs: positiveIntegerFromEnv("GEMINI_TIMEOUT_MS", 10000),
   trustProxy: trustProxyFromEnv(process.env.TRUST_PROXY),
   workspaceCreateRateLimitWindowMs: positiveIntegerFromEnv("WORKSPACE_CREATE_RATE_LIMIT_WINDOW_MS", 3600000),
   workspaceCreateRateLimitMax: positiveIntegerFromEnv("WORKSPACE_CREATE_RATE_LIMIT_MAX", 5),
@@ -64,5 +69,20 @@ export const env = Object.freeze({
   maxTotalMonitors: positiveIntegerFromEnv("MONITORS_TOTAL_MAX", 1000),
   workspaceInactivePurgeDays: positiveIntegerFromEnv("WORKSPACE_INACTIVE_PURGE_DAYS", 90),
   workspaceAccessLinkTtlMinutes: positiveIntegerFromEnv("WORKSPACE_ACCESS_LINK_TTL_MINUTES", 15),
+  allowPrivateTargets,
+  monitorResponseMaxBytes: positiveIntegerFromEnv("MONITOR_RESPONSE_MAX_BYTES", 1_048_576),
+  checkHistoryRetentionDays: positiveIntegerFromEnv("CHECK_HISTORY_RETENTION_DAYS", 14),
+  checkHistoryMaxPageSize: positiveIntegerFromEnv("CHECK_HISTORY_MAX_PAGE_SIZE", 50),
+  checkNowWorkspaceWindowMs: positiveIntegerFromEnv("CHECK_NOW_WORKSPACE_WINDOW_MS", 3_600_000),
+  checkNowWorkspaceMax: positiveIntegerFromEnv("CHECK_NOW_WORKSPACE_MAX", 30),
+  checkNowMonitorWindowMs: positiveIntegerFromEnv("CHECK_NOW_MONITOR_WINDOW_MS", 3_600_000),
+  checkNowMonitorMax: positiveIntegerFromEnv("CHECK_NOW_MONITOR_MAX", 6),
+  schedulerEnabled: parseBooleanSetting(process.env.SCHEDULER_ENABLED ?? "true", "SCHEDULER_ENABLED"),
+  schedulerTickIntervalMs: positiveIntegerFromEnv("SCHEDULER_TICK_INTERVAL_MS", 5_000),
+  schedulerConcurrency: positiveIntegerFromEnv("SCHEDULER_CONCURRENCY", 5),
+  schedulerMaxChecksPerMinute: positiveIntegerFromEnv("SCHEDULER_MAX_CHECKS_PER_MINUTE", 60),
+  schedulerJitterMs: positiveIntegerFromEnv("SCHEDULER_JITTER_MS", 5_000),
+  monitorCheckLeaseMs: positiveIntegerFromEnv("MONITOR_CHECK_LEASE_MS", 120_000),
+  autoResolveHealthyChecks: positiveIntegerFromEnv("AUTO_RESOLVE_CONSECUTIVE_HEALTHY_CHECKS", 2),
   publicAppUrl: parsedPublicAppUrl.origin,
 });

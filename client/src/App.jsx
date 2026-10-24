@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import Hero from "./components/Hero.jsx";
 import MonitorPanel, { assessmentSampleText } from "./components/MonitorPanel.jsx";
+import MonitorsExperience from "./components/MonitorsExperience.jsx";
+import WorkspaceLink from "./components/WorkspaceLink.jsx";
+import { useWorkspace } from "./useWorkspace.js";
 import { useAlerts } from "./useAlerts.js";
 
 const anomalyLabels = {
@@ -128,6 +131,9 @@ function ValuePoint({ number, title, detail }) {
 }
 
 export default function App() {
+  const { workspace, loading: workspaceLoading, error: workspaceError } = useWorkspace();
+  const [view, setView] = useState("alerts");
+  const [scope, setScope] = useState("workspace");
   const [status, setStatus] = useState("active");
   const [search, setSearch] = useState("");
   const [severity, setSeverity] = useState("all");
@@ -137,6 +143,8 @@ export default function App() {
     page,
     apiName: search,
     severity,
+    scope,
+    enabled: view === "alerts" && !workspaceLoading && Boolean(workspace),
   });
   const [checks, setChecks] = useState("[]");
   const sortedAlerts = useMemo(() => [...alerts].sort((left, right) => {
@@ -193,9 +201,10 @@ export default function App() {
             <span className="hidden text-xs text-slate-500 sm:block">Operations overview</span>
           </span>
         </a>
-        <div className="flex items-center gap-2 sm:gap-4">
-          <a className="hidden rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-white hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-700 sm:inline-flex" href="#how-it-works">How it works</a>
-          <a className="inline-flex min-h-10 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-700 sm:px-4 sm:text-sm" href="#active-alerts">Active alerts</a>
+        <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+          <button type="button" aria-pressed={view === "alerts"} onClick={() => setView("alerts")} className={`min-h-10 rounded-lg px-3 text-xs font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-700 sm:px-4 sm:text-sm ${view === "alerts" ? "bg-[#163f67] text-white" : "border border-slate-300 bg-white text-slate-700"}`}>Alerts</button>
+          <button type="button" aria-pressed={view === "monitors"} onClick={() => setView("monitors")} className={`min-h-10 rounded-lg px-3 text-xs font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-700 sm:px-4 sm:text-sm ${view === "monitors" ? "bg-[#163f67] text-white" : "border border-slate-300 bg-white text-slate-700"}`}>Monitors</button>
+          {workspace && <WorkspaceLink workspace={workspace} />}
         </div>
       </header>
 
@@ -228,7 +237,7 @@ export default function App() {
           <MonitorPanel value={checks} onChange={setChecks} onLoadSample={() => setChecks(assessmentSampleText)} onComplete={refresh} />
         </div>
 
-        <section id="active-alerts" aria-labelledby="active-alerts-heading">
+        {view === "alerts" ? <section id="active-alerts" aria-labelledby="active-alerts-heading">
           <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-[#477393]">Live dashboard</p>
@@ -254,6 +263,9 @@ export default function App() {
           </div>
 
           <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div className="inline-flex w-fit rounded-xl border border-slate-200 bg-slate-100 p-1" role="group" aria-label="Alert list source">
+              {[ ["workspace", "My workspace"], ["shared", "Shared demo"] ].map(([value, label]) => <button key={value} type="button" aria-pressed={scope === value} onClick={() => { setScope(value); setPage(1); }} className={`min-h-10 rounded-lg px-3 text-xs font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-700 sm:px-4 sm:text-sm ${scope === value ? "bg-white text-[#173f64] shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>{label}</button>)}
+            </div>
             <div role="tablist" aria-label="Alert status" onKeyDown={handleTabKeyDown} className="inline-flex w-fit rounded-xl border border-slate-200 bg-slate-100 p-1">
               {[["active", "Active"], ["resolved", "Resolved"]].map(([value, label]) => (
                 <button
@@ -349,8 +361,12 @@ export default function App() {
               </div>
             </nav>
           )}
-          <p className="mt-5 mb-0 text-center text-xs text-slate-400">Automatic refresh every 10 seconds</p>
-        </section>
+          <p className="mt-5 mb-0 text-center text-xs text-slate-400">Automatic refresh every 15 seconds while this tab is visible</p>
+        </section> : <section className="space-y-4" aria-label="Monitors view">
+          {workspaceLoading ? <PageState title="Opening your private workspace" detail="Creating a private browser workspace if this is your first visit…" />
+            : workspaceError ? <PageState title="Workspace unavailable" detail={workspaceError} action={<button className="mt-4 min-h-10 rounded-lg bg-[#163f67] px-4 text-sm font-bold text-white focus-visible:outline-2 focus-visible:outline-sky-700" type="button" onClick={() => window.location.reload()}>Retry</button>} />
+              : workspace ? <MonitorsExperience workspace={workspace} /> : null}
+        </section>}
       </div>
     </main>
   );

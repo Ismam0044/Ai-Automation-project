@@ -545,3 +545,120 @@ This file records the user's project instructions and prompts as requested. It w
 > Fix gaps with tests, run the full suite and show the real output. Log this prompt in AI_PROMPTS_LOG.md. Do not start any other phase. Wait for my approval.
 
 **Result:** Audited workspace auth, access links, quotas, purge behavior, monitor schema validation, and SSRF protection; added strict integer checks and expanded blocked-address tests. Updated README usage/settings and verified the full test suite.
+
+## 2026-10-24 - Safe monitor checks, scheduler, and history phase
+
+> Phase on branch v2. The assessment version on master and tag v1.0 must never be changed. Do not touch .env, do not print secrets, do not run git commit or git push. POST /monitor, GET /alerts and the input format from ASSESSMENT.md must keep working exactly as before for anonymous callers (the shared demo list).
+>
+> Scope: the safe fetcher, the scheduler, check history, status summaries, workspace scoped alerts and auto resolve. Do NOT build the Monitors page or any frontend in this phase.
+>
+> 0. First, tighten the IPv6 classifier. Reject 6to4 (2002::/16), Teredo (2001::/32), the documentation range (2001:db8::/32), and any other range inside 2000::/3 that embeds or tunnels IPv4 or is not meant for public use; for any such address that embeds an IPv4 address, extract it and apply the IPv4 rules. Add tests for each, including 2002:7f00:0001::.
+> 1. Safe fetcher (a single module, used by everything that fetches a monitor URL):
+>    a. Validate the URL with the existing validator, then resolve the hostname once, validate every answer, and connect only to a validated IP address (pin it through a custom lookup or by connecting to the IP with the original hostname for SNI and the Host header), so a changed DNS answer cannot redirect the request. Validate again right before connecting.
+>    b. Redirects off by default. If you support them, cap at 3 and run the full validation and IP pinning on every hop.
+>    c. Method GET only, a strict timeout from the monitor, a response size cap (default 1 MB) and abort when it is exceeded. Never decompress without a size limit.
+>    d. Do not send cookies, authorization or any workspace or app data. Use a fixed User-Agent that names the app.
+>    e. Never store or log response bodies, headers, query strings or the full URL (log only the monitor id, host and outcome). Parse JSON in memory only to count records: use records_field if set, the array length if the body is an array, the number if the field is numeric; otherwise records_returned is null. Discard the body.
+>    f. Return only: status_code, response_time_ms, records_returned (or null), and an outcome (ok, timeout, network_error, blocked, too_large, invalid_json). A network error, timeout or blocked target counts as status_code 0 and records_returned 0 for the detector.
+>    g. A setting ALLOW_PRIVATE_TARGETS, default false and refused when NODE_ENV is production, used only so I can monitor a local mock server in a demo.
+> 2. Alerts and workspaces: add workspace_id and monitor_id to alerts (null for the shared demo list). The dedupe key must include them, so two workspaces never share an alert. A request with a valid workspace key gets only that workspace's alerts from GET /alerts, with the same query parameters and response shape; an anonymous request still gets the shared demo list. Resolve works only on alerts the caller can see.
+> 3. Checks: each check builds an item in the exact format of ASSESSMENT.md (api_name taken from the monitor name, response_time_ms, status_code, records_returned) and goes through the existing detector, alert service and Gemini message logic, including the daily Gemini cap and the fallback. Apply the monitor's own settings: expected status and max response time override the default thresholds for that monitor only, and the zero records rule applies only when expect_records is true.
+> 4. Scheduler: an in process scheduler that runs due monitors with limited concurrency, jitter, and a timeout. Make claiming a due monitor atomic in MongoDB (set a next_check_at and a short lease with findOneAndUpdate) so two checks for the same monitor never overlap and a restart is safe, with due times kept in the database. Add settings for the tick interval, global concurrency and a maximum number of checks per minute. A paused monitor is never checked. Start the scheduler from the server, with a setting to turn it off. Explain clearly in the README what must change if the app ever runs as more than one instance.
+> 5. Check history: store every check (monitor_id, workspace_id, status_code, response_time_ms, records_returned, outcome, checked_at) with a TTL index driven by a retention setting in days (default 14). Endpoints, all workspace scoped: GET /workspaces/:id/monitors/:monitorId/checks (paged, newest first, capped page size) and GET /workspaces/:id/monitors/:monitorId/summary (state up, degraded or down, last check time, uptime percentage for 24 hours and 7 days, average and p95 response time). A "Check now" endpoint that runs one check immediately, rate limited per workspace and per monitor.
+> 6. Auto resolve: when a monitor has an active alert and passes a configurable number of consecutive healthy checks (default 2), resolve that alert automatically and record the reason. A new failure after that creates a fresh alert.
+> 7. Abuse limits: keep the existing rate limits; add a global cap on outgoing checks per minute, and make sure one noisy workspace cannot starve the others.
+> 8. Tests with mocks and local test servers only, no real internet and no Gemini: the fetcher never connects to an address that the validator rejected, DNS that changes between validation and connection, redirects to private addresses, oversized responses, timeouts, invalid JSON, records counting for each case, no body or full URL in any log line, workspace isolation of alerts and history, scheduler claiming without overlap, auto resolve after the right number of healthy checks, state and uptime calculation, the TTL index definition, and that anonymous POST /monitor and GET /alerts are unchanged. Run the full suite and show the real output.
+> 9. Add scripts/demo/mock-apis.js, a small server on localhost with synthetic data only (healthy, failing with 500, slow, and empty list endpoints) and a control endpoint to switch each one, for local demos only.
+> 10. Update the README (new endpoints, settings, how checks and auto resolve work, the privacy statement that only status, timing and counts are stored, and the single instance note) and log this prompt in AI_PROMPTS_LOG.md.
+> 11. Give me the exact PowerShell commands to try it myself: create a workspace, add a monitor for the mock server (with ALLOW_PRIVATE_TARGETS set for local use), see a check, break the mock, see an alert, fix the mock, and see the alert resolve on its own. Do not run them yourself.
+>
+> Do not start any other phase. Explain the fetcher's SSRF design in simple words, point me to the files and lines for the pinning and redirect handling, and wait for my approval.
+
+**Result:** Added a DNS-pinned GET-only monitor fetcher with strict response and timeout limits, workspace-scoped alert handling, scheduled checks, capped history and summaries, manual checks, automatic resolution, and a synthetic local mock server. Added tests and PowerShell walkthrough instructions; preserved the anonymous assessment endpoints. Tests were run locally with mocked service dependencies and loopback-only HTTP servers.
+
+## 2026-10-24 - Pre-approval implementation audit
+
+> Before I approve, answer each point with the file and line, or say it is missing, then fix any gap with tests. Do not touch .env, do not print secrets, do not run git commit or git push.
+>
+> 1. Atomic claiming of due monitors (findOneAndUpdate with next_check_at and a lease): where, and what happens after a crash while a check is running.
+> 2. The TTL index on check history and the retention setting: where defined.
+> 3. The summary endpoint: fields returned (state, last check, uptime 24h and 7d, average and p95).
+> 4. Alerts: workspace_id and monitor_id on alerts, and the dedupe key including both. Show that two workspaces with identical checks get separate alerts. Show that anonymous POST /monitor and GET /alerts return the same shapes as before.
+> 5. Logging: show every log call in the fetcher, scheduler and check service and confirm none prints a body, header, query string or full URL.
+> 6. ALLOW_PRIVATE_TARGETS: confirm startup fails or the setting is ignored when NODE_ENV is production. Also confirm the demo URL on port 4010 works with the allowed ports setting, and explain how.
+> 7. Auto resolve: do manual checks count as healthy checks? Explain the rule, the configurable count, and what happens if one failing check happens in between.
+> 8. Fairness: show how one noisy workspace is prevented from starving the others.
+> 9. List the 25 new test names.
+>
+> Run the full suite and show the real output. Log this prompt in AI_PROMPTS_LOG.md. Do not start any other phase. Wait for my approval.
+
+**Result:** Verified the scheduler lease and crash recovery behavior, check-history TTL and summary fields, workspace-scoped alert deduplication, anonymous route shapes, restricted fetcher/service logs, production private-target setting, manual-check auto-resolution counting and scheduler fairness. Added regression tests for identical scoped checks and manual healthy-check counting with failure resets, then reran the full test suite.
+
+## 2026-10-24 - Monitors experience and private workspace UI
+
+> Phase on branch v2. master and tag v1.0 must never be changed. Do not touch .env, do not print secrets, do not run git commit or git push. Frontend work, plus only the small backend additions listed below.
+>
+> Goal: a Monitors experience in the existing React, Vite and Tailwind client, so a visitor with no signup can add APIs, watch their status, and see their own alerts.
+>
+> 1. Workspace in the browser: on the first visit, create a workspace (POST /workspaces) and rely on the httpOnly cookie. Do not ask for the access key in this path and never store any secret in localStorage or sessionStorage. If there is no endpoint that returns the current workspace id and name using the cookie, add GET /workspaces/current (authenticated by cookie or bearer, read only). Show a clear "this workspace is private to this browser" explanation.
+> 2. "Open on another device": a button that requests the one time link, shows it once with a Copy button and the expiry time, and explains that it works once and that anyone with it can open the workspace. Rate limited on the server.
+> 3. Navigation with two views, Alerts and Monitors. In Alerts, add a switch between "My workspace" and "Shared demo" (the shared list from before). Keep tabs, search, severity filter and pagination working in both.
+> 4. Monitors list: a card or row for each monitor with a state badge (up, degraded, down, paused, not checked yet) using color, icon and text, last check time as "5 minutes ago" with the exact time on hover, uptime for 24 hours, last response time, and the check interval. Buttons: Check now, Pause or Resume, Edit, Delete with a confirmation dialog. Empty state with a clear first step.
+> 5. Add and edit form: labeled fields with hints for name, URL, interval (minimum 60), timeout, expected status, max response time, optional records field, and an "expect records" checkbox. Validate in the browser and map server errors to friendly messages. For a URL rejected by the safety rules, show a plain message such as "This address can't be monitored. Use a public https or http address." without revealing internal details or which rule fired.
+> 6. Monitor detail view: summary numbers (state, uptime 24h and 7d, average and p95), a response time chart of the recent checks drawn with lightweight inline SVG (no chart library) with a clear marker for failed checks, a table of recent checks with paging, and the monitor's active and recent alerts.
+> 7. Refresh: poll every 15 seconds, pause polling when the tab is hidden, never overlap requests, clean up timers, and show a gentle "last updated" time. Disable buttons while their request runs.
+> 8. Privacy and demo notice, visible on the Monitors page: "Demo. Do not monitor private or sensitive systems. Only status, timing and record counts are stored. Anyone with your workspace link can see your monitors."
+> 9. Safety: render all server text as normal React text (never dangerouslySetInnerHTML); mutating requests must send JSON with the right content type; on the server, verify that state changing requests with the cookie are protected against cross site requests (SameSite plus an Origin check for POST, PATCH and DELETE) and add it if missing, with tests.
+> 10. Style: consistent with the existing hero and Tailwind design, responsive from phone to desktop, keyboard operable, visible focus, labeled inputs, color never the only signal, readable contrast, and respect reduced motion.
+> 11. Run the client build and the full test suite and show the real output. If the client has no test setup, give me a manual checklist of what to click and what I should see. Do not claim the UI works unless something proves it.
+> 12. Update the README with the new pages and log this prompt in AI_PROMPTS_LOG.md.
+>
+> Do not start any other phase. Explain the file structure in simple words and wait for my approval.
+
+**Result:** Added the cookie-backed workspace bootstrap and current-workspace endpoint, one-time link UI, Alerts source switch, and full Monitors list/form/detail experience. Added cookie Origin checks and POST/PATCH/DELETE coverage, fixed React Strict Mode workspace initialization and 15-second visibility-aware polling, and documented the new views. The client production build succeeded and the full Node test suite passed (95 tests).
+
+## 2026-10-24 - MongoDB invalid namespace startup bug and safe environment check
+
+> Bug investigation on branch v2. Do not read, open, print or modify .env, and do not print any secret or connection string. Do not run git commit or git push.
+>
+> Problem: the app crashes at startup with MongoServerError "Invalid namespace specified: api_monitor/.alerts" (code 73), and the log line says MongoDB connected {"database":"api_monitor/"}. The database name that Mongoose uses contains a trailing slash. The connection itself and the credentials work. I believe the MONGODB_URI value in my .env has a slash between the database name and the question mark (for example .../api_monitor/?options). This has happened more than once, so the app should handle and explain it clearly.
+>
+> 1. Find the root cause in the code: show me where MONGODB_URI is read and where the database name comes from (for example src/config/env.js and src/db/mongoose.js), with file and line numbers, and explain why the trailing slash ends up in the database name. Do not guess; read the code.
+> 2. Add validation at startup, before connecting, that works for mongodb:// URIs with several hosts (which do not parse with the standard URL class, so write a careful parser or use the MongoDB driver's own connection string parser if it is available) and for mongodb+srv:// URIs. It must extract the database name and check it. A trailing slash on the database name must be normalized safely with one warning log (database name only, never the URI). Any other invalid database name (empty when required, or containing / \\ . space $ quotes or a null character, or longer than the MongoDB limit) must stop startup with a clear message that does not print the URI, for example: "MONGODB_URI has an invalid database name. Remove extra characters between the database name and the question mark."
+> 3. Make sure no log line, error message or stack trace can contain the password or full connection string: mask credentials in every startup error. Add a test that proves this with a fake URI containing a recognizable fake password.
+> 4. Add scripts/check-env.js and an npm script check:env. It reads the current environment the same way the app does and prints only safe facts: which required variables are present or missing; for MONGODB_URI the scheme, the number of hosts, the database name, whether the name had a trailing slash, the names (not values) of the options; for GEMINI_API_KEY only present or missing and the length; for GEMINI_MODEL the value; for the numeric settings their values. It must never print the URI, the password, the host names, or any part of the keys. Add tests for it with fake values.
+> 5. Tests: URI parsing cases (single host, multi host, srv, with and without options, trailing slash, missing database name, invalid names, credentials with encoded characters), the normalization and its warning, the masked errors, and the check script output containing no secret.
+> 6. Add a short troubleshooting entry to README.md: "Invalid namespace error: remove the slash after the database name in MONGODB_URI, run npm run check:env to see a safe summary."
+> 7. Run the full test suite and show the real output. Do not connect to Atlas or Gemini yourself.
+> 8. Log this prompt in AI_PROMPTS_LOG.md.
+>
+> Do not start any other task. Explain the root cause and the fix in simple words, and wait for my approval.
+
+**Result:** Traced the trailing namespace to the raw URI passed to Mongoose and its parsed connection name. Added pre-connect database-name validation and trailing-slash normalization, safe URI error redaction, `check:env`, fake-value tests, and troubleshooting documentation. The check-env CLI was exercised with injected fake values and a nonexistent dotenv file; the full suite passed 105 tests with no Atlas or Gemini calls.
+
+## 2026-10-24 — End-to-end verification request
+
+> End to end verification on branch v2, run by you. Do not read, open, print or modify .env, and never print any secret, key, connection string, workspace access key or link token. Do not edit project files or dependencies except where noted. Do not run git commit or git push.
+>
+> Goal: prove that the whole system works for real, using the real database and the real Gemini setup through the app's own configuration, and report only evidence you actually observed.
+>
+> Setup rules:
+> 1. Start the mock server (node scripts/demo/mock-apis.js) and the app (npm.cmd run dev, or node src/server.js) as background processes. For this run only, set ALLOW_PRIVATE_TARGETS=true and raise the rate limits through process environment variables for the app process only (never in .env), so testing is not blocked. Make sure only loopback demo targets are used. Remember the app must not start with private targets allowed in production.
+> 2. Run npm.cmd run check:env and show its safe output.
+> 3. Run node scripts/try-llm.js. Show only the message, the source and any failure reason. If the source is fallback, report the exact failure category (for example 503, 504, 404, 401) and retry up to three times, ten seconds apart, before reporting it.
+>
+> Scenarios (use PowerShell or Node scripts with the app's HTTP API, saving any helper script under scripts/verify/ only if useful, and tell me what you added):
+> A. Anonymous flow unchanged: POST /monitor with the sample from ASSESSMENT.md creates one alert for AppointmentAPI and none for PatientDataAPI; a second identical POST updates it and raises occurrence_count; GET /alerts shows the shared list. A non array body returns 400.
+> B. Workspaces: create two workspaces. Add a monitor in the first for http://127.0.0.1:4010/failing, run Check now, confirm a down state, an alert and a history entry. Confirm the second workspace cannot read or change the first one's monitors, checks or alerts (expect 401, 403 or 404, say which).
+> C. Recovery: switch the mock endpoint to healthy through its control endpoint, run two checks, confirm the alert moves to resolved. Break it again and confirm a fresh alert is created.
+> D. SSRF: try to add monitors for http://169.254.169.254, http://localhost:3000/health, http://[::1]:3000/, http://2130706433/, http://user:pass@example.com/, ftp://example.com/ and a port other than the allowed ones. Confirm each is rejected with a plain error and that the response does not leak internal details.
+> E. Limits: confirm a rate limited endpoint returns 429 with the standard JSON error when the limit is exceeded, using a temporary low limit in the process environment.
+> F. Security headers: fetch the built page from the app (run npm.cmd run build:client first) and confirm helmet headers are present and that index.html and its assets load with HTTP 200. If a headless browser tool is already available on this machine, load the page, wait for it to render, capture console errors and report them. Do not add any dependency to package.json; if no browser tool is available, say clearly that the visual check is not verified.
+> G. Logs: scan the app output from this run and confirm it contains no response bodies, headers, query strings, full monitor URLs, keys or connection strings. Report what you checked.
+> H. Cleanup: stop every process you started, and delete the test workspaces and alerts you created through the app's own API if a delete route exists. Otherwise list what remains in the database so I can remove it.
+>
+> Finally run the full test suite (npm.cmd test) and show the real final summary lines.
+>
+> Report format: one table with a row per scenario (A to H, plus try-llm and check:env) with Pass, Fail or Not verified, the evidence in one line, and the exact output for any failure. Never mark something Pass without observed output. Then list problems found, ranked by severity, with a proposed fix for each. Do not fix anything yet except obvious test script mistakes of your own. Log this prompt in AI_PROMPTS_LOG.md and wait for my approval.
+
+**Result:** Confirmed the current branch is `v2`. `check:env` produced safe output and the client production build succeeded. The Gemini script was run four times (initial attempt plus three retries, separated by ten seconds); every attempt used the fallback because the daily usage counter was unavailable (`DAILY_USAGE_COUNTER_UNAVAILABLE`). Port 4010 was already occupied by a Node process, so the requested mock server could not be started; its `/healthy` endpoint returned HTTP 200, but I did not control that process. The app failed to connect to MongoDB with its sanitized startup error and was stopped. Therefore live DB/API scenarios A–H could not be completed. No helper scripts were added. The full test suite passed: 105 tests, 0 failures. No test workspaces or alerts were created; no process started during this run remains running. The pre-existing listener on port 4010 was left untouched.

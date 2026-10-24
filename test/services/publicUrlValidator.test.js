@@ -9,11 +9,21 @@ test("public address classifier rejects reserved IPv4 and IPv6 ranges", () => {
     "198.18.0.1", "198.51.100.1", "203.0.113.1", "224.0.0.1", "240.0.0.1", "255.255.255.255",
     "::", "::1", "::ffff:192.168.1.1", "::ffff:127.0.0.1", "::ffff:10.0.0.1",
     "fc00::1", "fd00::1", "fe80::1", "ff02::1", "2001:db8::1",
+    "2002:7f00:0001::", "2002:0808:0808::", "2001:0000:4136:e378:8000:63bf:3fff:fdd2",
+    "2001:2::1", "2001:20::1", "3fff::1",
   ]) assert.equal(isPublicAddress(address), false, address);
 
   for (const address of ["8.8.8.8", "93.184.216.34", "2606:4700:4700::1111", "::ffff:8.8.8.8"]) {
     assert.equal(isPublicAddress(address), true, address);
   }
+});
+
+test("private target mode is explicit and limited to loopback demo addresses", async () => {
+  const validator = createPublicUrlValidator({ allowPrivateTargets: true });
+  assert.match(await validator("http://127.0.0.1:4010/health"), /127\.0\.0\.1:4010/);
+  await assert.rejects(validator("http://10.0.0.1:4010/health"), /public IP addresses/);
+  await assert.rejects(validator("http://192.168.1.1:4010/health"), /public IP addresses/);
+  await assert.rejects(validator("http://169.254.169.254/"), /public IP addresses/);
 });
 
 test("URL validator accepts HTTP(S) hosts only when DNS results are all public", async () => {

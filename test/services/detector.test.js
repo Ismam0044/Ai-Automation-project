@@ -173,3 +173,23 @@ test("anomaly type sets are sorted deterministically", () => {
   assert.deepEqual(first.anomaly_types, [...first.anomaly_types].sort());
   assert.deepEqual(second.anomaly_types, [...second.anomaly_types].sort());
 });
+
+test("monitor-specific status, latency, and expected-record settings override assessment defaults", () => {
+  const monitorCheck = {
+    api_name: "NoContentAPI",
+    status_code: 204,
+    response_time_ms: 2400,
+    records_returned: null,
+  };
+  assert.deepEqual(detectAnomalies(monitorCheck, {
+    expectedStatusCode: 204,
+    responseTimeWarningMs: 2500,
+    responseTimeCriticalMs: 5000,
+    expectRecords: false,
+  }), { api_name: "NoContentAPI", anomaly_types: [], severity: "none" });
+  const expectedRecords = detectAnomalies({ ...monitorCheck, status_code: 200 }, {
+    expectedStatusCode: 200,
+    expectRecords: true,
+  });
+  assert.ok(expectedRecords.anomaly_types.includes("records_returned_anomaly"));
+});

@@ -1,12 +1,16 @@
 import { Monitor } from "../models/monitor.js";
 import { Workspace } from "../models/workspace.js";
 import { WorkspaceAccessLink } from "../models/workspaceAccessLink.js";
+import { MonitorCheck } from "../models/monitorCheck.js";
+import { Alert } from "../models/alert.js";
 import { createMonitorRepository } from "./monitorRepository.js";
 
 export function createWorkspacePurgeService({
   WorkspaceModel = Workspace,
   MonitorModel = Monitor,
   LinkModel = WorkspaceAccessLink,
+  CheckModel = MonitorCheck,
+  AlertModel = Alert,
   monitorRepository = createMonitorRepository({ MonitorModel, WorkspaceModel }),
   clock = () => new Date(),
 } = {}) {
@@ -29,6 +33,8 @@ export function createWorkspacePurgeService({
       await Promise.all([
         MonitorModel.deleteMany({ workspace_id: removed._id }),
         LinkModel.deleteMany({ workspace_id: removed._id }),
+        CheckModel.deleteMany({ workspace_id: removed._id }),
+        AlertModel.deleteMany({ workspace_id: removed._id }),
       ]);
       purged += 1;
     }
@@ -38,6 +44,8 @@ export function createWorkspacePurgeService({
     await Promise.all([
       MonitorModel.deleteMany({ workspace_id: { $nin: activeIds } }),
       LinkModel.deleteMany({ workspace_id: { $nin: activeIds } }),
+      CheckModel.deleteMany({ workspace_id: { $nin: activeIds } }),
+      AlertModel.deleteMany({ workspace_id: { $type: "objectId", $nin: activeIds } }),
     ]);
     await monitorRepository.reconcileCounters();
     return purged;

@@ -11,6 +11,7 @@
     "dev": "nodemon src/server.js",
     "dev:client": "npm --prefix client run dev",
     "build:client": "npm --prefix client run build",
+    "check:env": "node scripts/check-env.js",
     "test": "node --test"
   },
   "dependencies": {

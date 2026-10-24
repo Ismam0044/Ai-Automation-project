@@ -33,12 +33,28 @@ export function createWorkspaceService({ WorkspaceModel = Workspace } = {}) {
     return { workspace, accessKey };
   }
 
+  async function getWorkspace(workspaceId) {
+    return WorkspaceModel.findById(workspaceId).select("_id name");
+  }
+
   async function authenticateWorkspace(workspaceId, accessKey) {
     if (typeof accessKey !== "string" || accessKey.length > 128) return null;
     const workspace = await keyQuery(workspaceId);
     if (!workspace || !constantTimeKeyMatch(workspace.access_key_hashes ?? [], accessKey)) return null;
     return WorkspaceModel.findOneAndUpdate(
       { _id: workspaceId, access_key_hashes: hashAccessKey(accessKey) },
+      { $set: { last_active_at: new Date() } },
+      { new: true },
+    ).select("_id name last_active_at");
+  }
+
+  async function authenticateAccessKey(accessKey) {
+    if (typeof accessKey !== "string" || accessKey.length > 128) return null;
+    const storedHash = hashAccessKey(accessKey);
+    const workspace = await WorkspaceModel.findOne({ access_key_hashes: storedHash }).select("+access_key_hashes");
+    if (!workspace || !constantTimeKeyMatch(workspace.access_key_hashes ?? [], accessKey)) return null;
+    return WorkspaceModel.findOneAndUpdate(
+      { _id: workspace._id, access_key_hashes: storedHash },
       { $set: { last_active_at: new Date() } },
       { new: true },
     ).select("_id name last_active_at");
@@ -57,10 +73,11 @@ export function createWorkspaceService({ WorkspaceModel = Workspace } = {}) {
     return workspace ? { workspace, accessKey } : null;
   }
 
-  return { createWorkspace, authenticateWorkspace, addAccessKey };
+  return { createWorkspace, getWorkspace, authenticateWorkspace, authenticateAccessKey, addAccessKey };
 }
 
 const defaultService = createWorkspaceService();
 export const createWorkspace = defaultService.createWorkspace;
 export const authenticateWorkspace = defaultService.authenticateWorkspace;
+export const authenticateWorkspaceAccessKey = defaultService.authenticateAccessKey;
 export const addWorkspaceAccessKey = defaultService.addAccessKey;

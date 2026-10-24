@@ -2,7 +2,7 @@ import { Alert } from "../models/alert.js";
 
 export const PLACEHOLDER_ALERT_MESSAGE = "Anomaly detected; detailed analysis pending.";
 
-export function buildDedupeKey(apiName, anomalyTypes) {
+export function buildDedupeKey(apiName, anomalyTypes, { workspaceId = null, monitorId = null } = {}) {
   if (typeof apiName !== "string" || apiName.trim().length === 0) {
     throw new TypeError("api_name must be a non-empty string to build an alert dedupe key");
   }
@@ -10,7 +10,7 @@ export function buildDedupeKey(apiName, anomalyTypes) {
     throw new TypeError("anomaly_types must be an array of strings");
   }
 
-  return `${apiName}|${[...new Set(anomalyTypes)].sort().join("|")}`;
+  return `${workspaceId ?? "shared"}|${monitorId ?? "demo"}|${apiName}|${[...new Set(anomalyTypes)].sort().join("|")}`;
 }
 
 function isDuplicateKeyError(error) {
@@ -23,6 +23,7 @@ export function createAlertService({ AlertModel = Alert } = {}) {
     inputSnapshot,
     message = PLACEHOLDER_ALERT_MESSAGE,
     messageSource = "fallback",
+    { workspaceId = null, monitorId = null } = {},
   ) {
     if (!detectionResult || !Array.isArray(detectionResult.anomaly_types)) {
       throw new TypeError("A detection result with anomaly_types is required");
@@ -47,12 +48,15 @@ export function createAlertService({ AlertModel = Alert } = {}) {
       throw new TypeError("message_source must be model or fallback");
     }
 
-    const dedupeKey = buildDedupeKey(apiName, anomalyTypes);
+    const scope = { workspaceId, monitorId };
+    const dedupeKey = buildDedupeKey(apiName, anomalyTypes, scope);
     const filter = { dedupe_key: dedupeKey, status: "active" };
     const update = {
       $set: {
         api_name: apiName,
         anomaly_types: anomalyTypes,
+        workspace_id: workspaceId,
+        monitor_id: monitorId,
         severity: detectionResult.severity,
         message,
         message_source: messageSource,
@@ -62,13 +66,26 @@ export function createAlertService({ AlertModel = Alert } = {}) {
     };
     const updateOptions = { new: true, runValidators: true };
 
-    const existingAlert = await AlertModel.findOneAndUpdate(filter, update, updateOptions);
+    let existingAlert = await AlertModel.findOneAndUpdate(filter, update, updateOptions);
+    if (!existingAlert && workspaceId === null && monitorId === null) {
+      // Upgrade prior shared alerts in place so the new scoped key does not duplicate them.
+      existingAlert = await AlertModel.findOneAndUpdate({
+        status: "active",
+        api_name: apiName,
+        anomaly_types: anomalyTypes,
+        workspace_id: null,
+        monitor_id: null,
+        dedupe_key: { $ne: dedupeKey },
+      }, update, updateOptions);
+    }
     if (existingAlert) return existingAlert;
 
     try {
       return await AlertModel.create({
         api_name: apiName,
         anomaly_types: anomalyTypes,
+        workspace_id: workspaceId,
+        monitor_id: monitorId,
         severity: detectionResult.severity,
         message,
         message_source: messageSource,
@@ -86,12 +103,12 @@ export function createAlertService({ AlertModel = Alert } = {}) {
     }
   }
 
-  async function listActiveAlerts() {
-    return AlertModel.find({ status: "active" }).sort({ createdAt: -1 });
+  async function listActiveAlerts({ workspaceId = null } = {}) {
+    return AlertModel.find({ status: "active", workspace_id: workspaceId }).sort({ createdAt: -1 });
   }
 
-  async function listAlerts({ status = "active", page = 1, limit = 20, apiName = "", severity = "all" } = {}) {
-    const summaryFilter = { status };
+  async function listAlerts({ status = "active", page = 1, limit = 20, apiName = "", severity = "all", workspaceId = null } = {}) {
+    const summaryFilter = { status, workspace_id: workspaceId };
     if (apiName) {
       const escaped = apiName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       summaryFilter.api_name = new RegExp(escaped, "i");
@@ -127,7 +144,7 @@ export function createAlertService({ AlertModel = Alert } = {}) {
     };
   }
 
-  async function findActiveAlertForDetection(detectionResult) {
+  async function findActiveAlertForDetection(detectionResult, { workspaceId = null, monitorId = null } = {}) {
     if (!detectionResult || !Array.isArray(detectionResult.anomaly_types)
         || detectionResult.anomaly_types.length === 0) {
       return null;
@@ -136,19 +153,37 @@ export function createAlertService({ AlertModel = Alert } = {}) {
     const apiName = typeof detectionResult.api_name === "string" && detectionResult.api_name.trim()
       ? detectionResult.api_name.trim()
       : "unknown";
-    const dedupeKey = buildDedupeKey(apiName, detectionResult.anomaly_types);
-    return AlertModel.findOne({ dedupe_key: dedupeKey, status: "active" });
+    const dedupeKey = buildDedupeKey(apiName, detectionResult.anomaly_types, { workspaceId, monitorId });
+    let alert = await AlertModel.findOne({ dedupe_key: dedupeKey, status: "active" });
+    if (!alert && workspaceId === null && monitorId === null) {
+      alert = await AlertModel.findOne({
+        status: "active",
+        api_name: apiName,
+        anomaly_types: [...new Set(detectionResult.anomaly_types)].sort(),
+        workspace_id: null,
+        monitor_id: null,
+        dedupe_key: { $ne: dedupeKey },
+      });
+    }
+    return alert;
   }
 
-  async function resolveAlertById(id) {
+  async function resolveAlertById(id, { workspaceId = null, reason = null } = {}) {
     return AlertModel.findOneAndUpdate(
-      { _id: id, status: "active" },
-      { $set: { status: "resolved" } },
+      { _id: id, status: "active", workspace_id: workspaceId },
+      { $set: { status: "resolved", resolution_reason: reason } },
       { new: true, runValidators: true },
     );
   }
 
-  return { saveAlert, listActiveAlerts, listAlerts, findActiveAlertForDetection, resolveAlertById };
+  async function resolveMonitorAlerts(workspaceId, monitorId, reason) {
+    return AlertModel.updateMany(
+      { workspace_id: workspaceId, monitor_id: monitorId, status: "active" },
+      { $set: { status: "resolved", resolution_reason: reason } },
+    );
+  }
+
+  return { saveAlert, listActiveAlerts, listAlerts, findActiveAlertForDetection, resolveAlertById, resolveMonitorAlerts };
 }
 
 const defaultService = createAlertService();
@@ -158,3 +193,4 @@ export const listActiveAlerts = defaultService.listActiveAlerts;
 export const listAlerts = defaultService.listAlerts;
 export const findActiveAlertForDetection = defaultService.findActiveAlertForDetection;
 export const resolveAlertById = defaultService.resolveAlertById;
+export const resolveMonitorAlerts = defaultService.resolveMonitorAlerts;

@@ -9,6 +9,7 @@ export default defineConfig({
       "/alerts": "http://localhost:3000",
       "/monitor": "http://localhost:3000",
       "/health": "http://localhost:3000",
+      "/workspaces": "http://localhost:3000",
     },
   },
 });

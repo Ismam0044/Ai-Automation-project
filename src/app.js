@@ -9,6 +9,7 @@ import { logger } from "./config/logger.js";
 import { createErrorHandler } from "./middleware/errorHandler.js";
 import { createHttpError } from "./middleware/httpError.js";
 import { createRateLimiters } from "./middleware/rateLimits.js";
+import { createCookieOriginGuard } from "./middleware/cookieOriginGuard.js";
 import { createApiRoutes } from "./routes/index.js";
 
 const clientDistDirectory = fileURLToPath(new URL("../client/dist/", import.meta.url));
@@ -19,6 +20,8 @@ export function createApp({
   workspaceService,
   workspaceAccessLinkService,
   monitorRepository,
+  monitorCheckService,
+  checkHistoryService,
   publicUrlValidator,
   monitorSettings = {},
   appLogger = logger,
@@ -32,6 +35,7 @@ export function createApp({
     alertsMaxPageSize: env.alertsMaxPageSize,
     monitorRateLimitWindowMs: env.monitorRateLimitWindowMs,
     monitorRateLimitMax: env.monitorRateLimitMax,
+    geminiTimeoutMs: env.geminiTimeoutMs,
     apiRateLimitWindowMs: env.apiRateLimitWindowMs,
     apiRateLimitMax: env.apiRateLimitMax,
     trustProxy: env.trustProxy,
@@ -45,6 +49,21 @@ export function createApp({
     maxTotalMonitors: env.maxTotalMonitors,
     workspaceInactivePurgeDays: env.workspaceInactivePurgeDays,
     workspaceAccessLinkTtlMinutes: env.workspaceAccessLinkTtlMinutes,
+    allowPrivateTargets: env.allowPrivateTargets,
+    monitorResponseMaxBytes: env.monitorResponseMaxBytes,
+    checkHistoryRetentionDays: env.checkHistoryRetentionDays,
+    checkHistoryMaxPageSize: env.checkHistoryMaxPageSize,
+    checkNowWorkspaceWindowMs: env.checkNowWorkspaceWindowMs,
+    checkNowWorkspaceMax: env.checkNowWorkspaceMax,
+    checkNowMonitorWindowMs: env.checkNowMonitorWindowMs,
+    checkNowMonitorMax: env.checkNowMonitorMax,
+    schedulerEnabled: env.schedulerEnabled,
+    schedulerTickIntervalMs: env.schedulerTickIntervalMs,
+    schedulerConcurrency: env.schedulerConcurrency,
+    schedulerMaxChecksPerMinute: env.schedulerMaxChecksPerMinute,
+    schedulerJitterMs: env.schedulerJitterMs,
+    monitorCheckLeaseMs: env.monitorCheckLeaseMs,
+    autoResolveHealthyChecks: env.autoResolveHealthyChecks,
     ...monitorSettings,
   };
   if (settings.alertsDefaultPageSize > settings.alertsMaxPageSize) {
@@ -85,6 +104,7 @@ export function createApp({
       },
     },
   }));
+  app.use(createCookieOriginGuard({ nodeEnv: settings.nodeEnv, publicAppUrl: settings.publicAppUrl }));
   app.post("/monitor", limits.monitor);
   app.use("/alerts", limits.api);
   app.use("/workspaces", limits.api);
@@ -99,6 +119,8 @@ export function createApp({
     workspaceService,
     workspaceAccessLinkService,
     monitorRepository,
+    monitorCheckService,
+    checkHistoryService,
     publicUrlValidator,
     settings,
     logger: appLogger,

@@ -2,16 +2,16 @@ import pino from "pino";
 
 const isDevelopment = (process.env.NODE_ENV ?? "development") === "development";
 
-function redactLogText(value) {
+export function redactLogText(value) {
   if (typeof value !== "string") return value;
   return value
-    .replace(/mongodb(?:\+srv)?:\/\/[^@\s/]+@/gi, "mongodb://[REDACTED]@")
+    .replace(/mongodb(?:\+srv)?:\/\/[^\s"'<>]+/gi, "[REDACTED_MONGODB_URI]")
     .replace(/\bAIza[\w-]{20,}\b/g, "[REDACTED]")
     .replace(/\bAQ\.[\w-]{20,}\b/g, "[REDACTED]")
     .replace(/((?:api[_-]?key|password|passwd)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;&]+)/gi, "$1[REDACTED]");
 }
 
-function serializeSafeError(error) {
+export function serializeSafeError(error) {
   if (!error || typeof error !== "object") return { message: redactLogText(String(error)) };
   return {
     type: typeof error.name === "string" ? error.name : "Error",

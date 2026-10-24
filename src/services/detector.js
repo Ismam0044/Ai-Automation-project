@@ -17,7 +17,13 @@ function isObject(value) {
 }
 
 /** Analyze one API check without side effects. Invalid checks produce a result instead of throwing. */
-export function detectAnomalies(check) {
+export function detectAnomalies(check, {
+  expectRecords = true,
+  expectedStatusCode = null,
+  responseTimeWarningMs = monitoringConfig.responseTimeWarningMs,
+  responseTimeCriticalMs = monitoringConfig.responseTimeCriticalMs,
+  allowStatusZero = false,
+} = {}) {
   const apiName = isObject(check) && typeof check.api_name === "string" && check.api_name.trim()
     ? check.api_name
     : null;
@@ -28,7 +34,7 @@ export function detectAnomalies(check) {
   }
 
   let hasValidationIssue = false;
-  for (const field of ["api_name", "response_time_ms", "status_code", "records_returned"]) {
+  for (const field of ["api_name", "response_time_ms", "status_code", ...(expectRecords ? ["records_returned"] : [])]) {
     if (!Object.hasOwn(check, field)) hasValidationIssue = true;
   }
 
@@ -41,36 +47,41 @@ export function detectAnomalies(check) {
     && check.response_time_ms >= 0;
   if (!responseTimeIsValid) {
     hasValidationIssue = true;
-  } else if (check.response_time_ms > monitoringConfig.responseTimeCriticalMs) {
+  } else if (check.response_time_ms > responseTimeCriticalMs) {
     anomalyTypes.push("response_time_critical");
-  } else if (check.response_time_ms > monitoringConfig.responseTimeWarningMs) {
+  } else if (check.response_time_ms > responseTimeWarningMs) {
     anomalyTypes.push("response_time_warning");
   }
 
   const statusIsValid = typeof check.status_code === "number"
     && Number.isInteger(check.status_code)
-    && check.status_code >= 100
+    && ((allowStatusZero && check.status_code === 0) || check.status_code >= 100)
     && check.status_code <= 599;
   if (!statusIsValid) hasValidationIssue = true;
 
   if (typeof check.status_code === "number" && Number.isFinite(check.status_code)
-      && (check.status_code < monitoringConfig.successStatusMin
-        || check.status_code > monitoringConfig.successStatusMax)) {
-    const isServerError = check.status_code >= monitoringConfig.serverErrorStatusMin
-      && check.status_code <= monitoringConfig.serverErrorStatusMax;
+      && (expectedStatusCode !== null
+        ? check.status_code !== expectedStatusCode
+        : check.status_code < monitoringConfig.successStatusMin
+          || check.status_code > monitoringConfig.successStatusMax)) {
+    const isServerError = (allowStatusZero && check.status_code === 0)
+      || (check.status_code >= monitoringConfig.serverErrorStatusMin
+        && check.status_code <= monitoringConfig.serverErrorStatusMax);
     anomalyTypes.push(isServerError
       ? "http_status_failure_critical"
       : "http_status_failure_warning");
   }
 
-  const recordsIsNumeric = typeof check.records_returned === "number"
-    && Number.isFinite(check.records_returned);
-  const recordsAreValid = recordsIsNumeric
-    && Number.isInteger(check.records_returned)
-    && check.records_returned >= 0;
-  if (!recordsAreValid) hasValidationIssue = true;
-  if (!recordsAreValid || check.records_returned === 0) {
-    anomalyTypes.push("records_returned_anomaly");
+  if (expectRecords) {
+    const recordsIsNumeric = typeof check.records_returned === "number"
+      && Number.isFinite(check.records_returned);
+    const recordsAreValid = recordsIsNumeric
+      && Number.isInteger(check.records_returned)
+      && check.records_returned >= 0;
+    if (!recordsAreValid) hasValidationIssue = true;
+    if (!recordsAreValid || check.records_returned === 0) {
+      anomalyTypes.push("records_returned_anomaly");
+    }
   }
 
   if (hasValidationIssue) anomalyTypes.push("validation_anomaly");

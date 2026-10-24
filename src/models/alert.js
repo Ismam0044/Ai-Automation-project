@@ -1,6 +1,8 @@
 import mongoose from "mongoose";
 
 const alertSchema = new mongoose.Schema({
+  workspace_id: { type: mongoose.Schema.Types.ObjectId, ref: "Workspace", default: null },
+  monitor_id: { type: mongoose.Schema.Types.ObjectId, ref: "Monitor", default: null },
   api_name: {
     type: String,
     required: true,
@@ -49,8 +51,18 @@ const alertSchema = new mongoose.Schema({
     min: 1,
     default: 1,
   },
+  resolution_reason: { type: String, default: null },
 }, {
   timestamps: true,
+  toJSON: {
+    transform(_document, returned) {
+      // Preserve the original shared-demo alert JSON shape for anonymous callers.
+      if (returned.workspace_id === null) delete returned.workspace_id;
+      if (returned.monitor_id === null) delete returned.monitor_id;
+      if (returned.resolution_reason === null) delete returned.resolution_reason;
+      return returned;
+    },
+  },
 });
 
 alertSchema.index(

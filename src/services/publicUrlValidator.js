@@ -69,8 +69,25 @@ function isPublicIpv6(address) {
     ].join("."));
   }
   if (value >> 32n === 0n) return false;
-  if (prefix(0x100080n, 23)) return false;
-  if (prefix(0x20010db8n, 32) || prefix(0x2002n, 16)) return false;
+  // 6to4 embeds IPv4 in bits 16-48; Teredo complements the client IPv4 in
+  // the final 32 bits. Classify the embedded value as well, then reject both
+  // transition mechanisms regardless: this service never needs IPv4 tunnels.
+  if (prefix(0x2002n, 16)) {
+    const embedded = Number((value >> 80n) & 0xffffffffn);
+    isPublicIpv4([embedded >>> 24, (embedded >>> 16) & 255, (embedded >>> 8) & 255, embedded & 255].join("."));
+    return false;
+  }
+  if (prefix(0x20010000n, 32)) {
+    const embedded = Number((~value) & 0xffffffffn);
+    isPublicIpv4([embedded >>> 24, (embedded >>> 16) & 255, (embedded >>> 8) & 255, embedded & 255].join("."));
+    return false;
+  }
+  // IETF protocol assignments, benchmarking, deprecated/identifier ranges,
+  // documentation, and the newer 3fff::/20 documentation allocation.
+  if (prefix(0x100080n, 23) || prefix(0x200100020000n, 48)
+      || prefix(0x2001001n, 28) || prefix(0x2001002n, 28)
+      || prefix(0x2001003n, 28) || prefix(0x20010db8n, 32)
+      || prefix(0x3fff0n, 20)) return false;
   // Accept only global-unicast 2000::/3. This excludes unspecified, loopback,
   // link-local, unique-local, multicast, and other special-purpose ranges.
   return prefix(0x1n, 3);
@@ -83,7 +100,20 @@ export function isPublicAddress(address) {
   return false;
 }
 
-export function createPublicUrlValidator({ lookup = dnsLookup } = {}) {
+function isAllowedPrivateDemoAddress(address) {
+  const family = isIP(address);
+  if (family === 4) {
+    const value = ipv4Number(address);
+    return inIpv4Range(value, ipv4Number("127.0.0.0"), 8);
+  }
+  if (family === 6) {
+    const value = parseIpv6(address);
+    return value === 1n;
+  }
+  return false;
+}
+
+export function createPublicUrlValidator({ lookup = dnsLookup, allowPrivateTargets = false, returnDetails = false } = {}) {
   return async function validatePublicUrl(input) {
     if (typeof input !== "string" || input.length > 2048) {
       throw new TypeError("URL must be a string of at most 2048 characters.");
@@ -101,14 +131,15 @@ export function createPublicUrlValidator({ lookup = dnsLookup } = {}) {
     if (parsed.username || parsed.password) {
       throw new TypeError("URLs must not contain credentials.");
     }
-    if (parsed.port && parsed.port !== (parsed.protocol === "https:" ? "443" : "80")) {
+    if (!allowPrivateTargets && parsed.port && parsed.port !== (parsed.protocol === "https:" ? "443" : "80")) {
       throw new TypeError("Only the standard HTTP and HTTPS ports are allowed.");
     }
 
     const hostname = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
     const hostnameForCheck = hostname.replace(/\.$/, "");
-    if (!hostnameForCheck || (!isIP(hostnameForCheck) && !hostnameForCheck.includes("."))
-        || hostnameForCheck === "localhost" || hostnameForCheck.endsWith(".localhost")
+    const isLoopbackName = hostnameForCheck === "localhost" || hostnameForCheck.endsWith(".localhost");
+    if (!hostnameForCheck || (!allowPrivateTargets && !isIP(hostnameForCheck) && !hostnameForCheck.includes("."))
+        || (!allowPrivateTargets && isLoopbackName)
         || hostnameForCheck.endsWith(".local") || hostnameForCheck.endsWith(".internal")
         || hostnameForCheck.endsWith(".test") || hostnameForCheck.endsWith(".example")
         || hostnameForCheck.endsWith(".invalid") || hostnameForCheck === "home.arpa"
@@ -127,11 +158,16 @@ export function createPublicUrlValidator({ lookup = dnsLookup } = {}) {
         throw new TypeError("URL host must resolve only to public IP addresses.");
       }
     }
-    if (addresses.length === 0 || addresses.some((address) => !isPublicAddress(address))) {
+    if (addresses.length === 0 || addresses.some((address) => !isPublicAddress(address)
+        && !(allowPrivateTargets && (isAllowedPrivateDemoAddress(address) || (isLoopbackName && isIP(address) === 4
+          && isAllowedPrivateDemoAddress(address)))))) {
       throw new TypeError("URL host must resolve only to public IP addresses.");
     }
 
     parsed.hash = "";
+    if (returnDetails) {
+      return { url: parsed, normalizedUrl: parsed.toString(), hostname: hostnameForCheck, addresses: [...new Set(addresses)] };
+    }
     return parsed.toString();
   };
 }

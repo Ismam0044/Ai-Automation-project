@@ -14,14 +14,14 @@ const quietLogger = {
 function makeMemoryAlertService() {
   const records = [];
   let nextId = 1;
-  const keyFor = (detection) => `${detection.api_name ?? "unknown"}|${[...detection.anomaly_types].sort().join("|")}`;
+  const keyFor = (detection, scope = {}) => `${scope.workspaceId ?? "shared"}|${scope.monitorId ?? "demo"}|${detection.api_name ?? "unknown"}|${[...detection.anomaly_types].sort().join("|")}`;
   return {
     records,
-    async findActiveAlertForDetection(detection) {
-      return records.find((record) => record.status === "active" && record.dedupe_key === keyFor(detection)) ?? null;
+    async findActiveAlertForDetection(detection, scope = {}) {
+      return records.find((record) => record.status === "active" && record.dedupe_key === keyFor(detection, scope)) ?? null;
     },
-    async saveAlert(detection, inputSnapshot, message, messageSource) {
-      const existing = await this.findActiveAlertForDetection(detection);
+    async saveAlert(detection, inputSnapshot, message, messageSource, scope = {}) {
+      const existing = await this.findActiveAlertForDetection(detection, scope);
       if (existing) {
         existing.input_snapshot = inputSnapshot;
         existing.message = message;
@@ -38,9 +38,11 @@ function makeMemoryAlertService() {
         severity: detection.severity,
         message,
         message_source: messageSource,
+        workspace_id: scope.workspaceId ?? null,
+        monitor_id: scope.monitorId ?? null,
         input_snapshot: inputSnapshot,
         status: "active",
-        dedupe_key: keyFor(detection),
+        dedupe_key: keyFor(detection, scope),
         occurrence_count: 1,
         createdAt: now,
         updatedAt: now,
@@ -48,13 +50,13 @@ function makeMemoryAlertService() {
       records.push(record);
       return record;
     },
-    async listActiveAlerts() {
-      return records.filter((record) => record.status === "active")
+    async listActiveAlerts({ workspaceId = null } = {}) {
+      return records.filter((record) => record.status === "active" && record.workspace_id === workspaceId)
         .sort((left, right) => right.createdAt - left.createdAt);
     },
-    async listAlerts({ status, page, limit, apiName, severity }) {
+    async listAlerts({ status, page, limit, apiName, severity, workspaceId = null }) {
       const search = apiName ? apiName.toLowerCase() : "";
-      const matchingStatus = records.filter((record) => record.status === status
+      const matchingStatus = records.filter((record) => record.status === status && record.workspace_id === workspaceId
         && (!search || record.api_name.toLowerCase().includes(search)));
       const matching = matchingStatus.filter((record) => severity === "all" || record.severity === severity);
       matching.sort((left, right) => status === "resolved"
@@ -72,19 +74,34 @@ function makeMemoryAlertService() {
         },
       };
     },
-    async resolveAlertById(id) {
-      const record = records.find((item) => item._id === id && item.status === "active");
+    async resolveAlertById(id, { workspaceId = null } = {}) {
+      const record = records.find((item) => item._id === id && item.status === "active" && item.workspace_id === workspaceId);
       if (record) {
         record.status = "resolved";
         record.updatedAt = new Date();
       }
       return record ?? null;
     },
+    async resolveMonitorAlerts(workspaceId, monitorId, reason) {
+      for (const record of records) {
+        if (record.status === "active" && record.workspace_id === workspaceId && record.monitor_id === monitorId) {
+          record.status = "resolved";
+          record.resolution_reason = reason;
+          record.updatedAt = new Date();
+        }
+      }
+    },
   };
 }
 
 async function withServer(options, run) {
-  const app = createApp({ appLogger: quietLogger, logRequests: false, ...options });
+  const app = createApp({
+    appLogger: quietLogger,
+    logRequests: false,
+    llmService: { async generateAlertMessage() { return { message: "Mock alert message.", source: "fallback" }; } },
+    checkHistoryService: { async summary() { return { state: "not_checked_yet" }; }, async summaries() { return new Map(); }, async list() { return { checks: [], pagination: {} }; } },
+    ...options,
+  });
   const server = await new Promise((resolve) => {
     const instance = app.listen(0, "127.0.0.1", () => resolve(instance));
   });
@@ -265,6 +282,164 @@ test("GET /alerts returns active alert list newest first", async () => {
   });
 });
 
+test("GET /alerts can explicitly read the shared demo list while a workspace cookie is present", async () => {
+  const workspaceId = "a".repeat(24);
+  const alertService = makeMemoryAlertService();
+  const shared = await alertService.saveAlert({ api_name: "SharedDemo", anomaly_types: ["http_status_failure_warning"], severity: "warning" }, {}, "Shared", "fallback");
+  await alertService.saveAlert({ api_name: "PrivateAPI", anomaly_types: ["http_status_failure_critical"], severity: "critical" }, {}, "Private", "fallback", { workspaceId, monitorId: "b".repeat(24) });
+  const workspaceService = {
+    async authenticateWorkspace(id, key) { return id === workspaceId && key === "k".repeat(43) ? { _id: id } : null; },
+  };
+  await withServer({ alertService, workspaceService }, async (base) => {
+    const response = await fetch(`${base}/alerts?scope=shared&status=active` , {
+      headers: { cookie: `workspace_${workspaceId}=${"k".repeat(43)}; workspace_active=${workspaceId}` },
+    });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.alerts.map((alert) => alert._id), [shared._id]);
+    assert.deepEqual(Object.keys(body), ["alerts", "pagination", "summary"]);
+  });
+});
+
+test("GET /workspaces/current returns cookie-authenticated workspace identity without its key", async () => {
+  const workspaceId = "a".repeat(24);
+  const accessKey = "k".repeat(43);
+  const workspaceService = {
+    async authenticateWorkspace(id, key) { return id === workspaceId && key === accessKey ? { _id: id } : null; },
+    async getWorkspace(id) { return { _id: id, name: "Private demo" }; },
+  };
+  await withServer({ workspaceService }, async (base) => {
+    const response = await fetch(`${base}/workspaces/current`, {
+      headers: { cookie: `workspace_${workspaceId}=${accessKey}; workspace_active=${workspaceId}` },
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { workspace: { id: workspaceId, name: "Private demo" } });
+  });
+});
+
+test("cookie-authenticated POST, PATCH, and DELETE reject cross-site Origin; local Vite POST is accepted", async () => {
+  const workspaceId = "a".repeat(24);
+  const workspaceService = {
+    async createWorkspace(name) { return { workspace: { _id: workspaceId, name }, accessKey: "k".repeat(43) }; },
+  };
+  await withServer({ workspaceService, monitorSettings: { nodeEnv: "development", publicAppUrl: "http://localhost:3000" } }, async (base) => {
+    const cookie = `workspace_${workspaceId}=${"k".repeat(43)}; workspace_active=${workspaceId}`;
+    const blocked = await fetch(`${base}/workspaces`, {
+      method: "POST", headers: { cookie, origin: "https://attacker.example", "content-type": "application/json" },
+      body: JSON.stringify({ name: "No" }),
+    });
+    assert.equal(blocked.status, 403);
+    assert.deepEqual(await blocked.json(), { error: { code: "CROSS_SITE_REQUEST", message: "This request could not be verified. Reload the page and try again." } });
+    for (const method of ["PATCH", "DELETE"]) {
+      const response = await fetch(`${base}/workspaces/${workspaceId}/monitors/${"b".repeat(24)}`, {
+        method, headers: { cookie, origin: "https://attacker.example", "content-type": "application/json" },
+        body: "{}",
+      });
+      assert.equal(response.status, 403, `${method} must reject a cross-site Origin`);
+      assert.equal((await response.json()).error.code, "CROSS_SITE_REQUEST");
+    }
+    const allowed = await fetch(`${base}/workspaces`, {
+      method: "POST", headers: { cookie, origin: "http://127.0.0.1:5173", "content-type": "application/json" },
+      body: JSON.stringify({ name: "Same site" }),
+    });
+    assert.equal(allowed.status, 201);
+  });
+});
+
+test("workspace bearer scopes GET /alerts and resolve while anonymous callers stay on shared alerts", async () => {
+  const workspaceId = "a".repeat(24);
+  const otherWorkspaceId = "c".repeat(24);
+  const keyA = "a".repeat(43);
+  const keyB = "b".repeat(43);
+  const alertService = makeMemoryAlertService();
+  const shared = await alertService.saveAlert({ api_name: "SharedDemo", anomaly_types: ["http_status_failure_warning"], severity: "warning" }, {}, "Shared", "fallback");
+  const scoped = await alertService.saveAlert({ api_name: "PrivateAPI", anomaly_types: ["http_status_failure_critical"], severity: "critical" }, {}, "Private", "fallback", { workspaceId, monitorId: "d".repeat(24) });
+  const workspaceService = {
+    async authenticateAccessKey(key) {
+      if (key === keyA) return { _id: workspaceId };
+      if (key === keyB) return { _id: otherWorkspaceId };
+      return null;
+    },
+    async authenticateWorkspace(id, key) {
+      return (id === workspaceId && key === keyA) ? { _id: workspaceId } : null;
+    },
+  };
+  await withServer({ alertService, workspaceService }, async (base) => {
+    const anonymous = await fetch(`${base}/alerts`);
+    assert.deepEqual((await anonymous.json()).alerts.map((alert) => alert._id), [shared._id]);
+    const privateResponse = await fetch(`${base}/alerts`, { headers: { authorization: `Bearer ${keyA}` } });
+    assert.deepEqual((await privateResponse.json()).alerts.map((alert) => alert._id), [scoped._id]);
+    const otherWorkspace = await fetch(`${base}/alerts`, { headers: { authorization: `Bearer ${keyB}` } });
+    assert.deepEqual((await otherWorkspace.json()).alerts, []);
+    const cannotResolve = await fetch(`${base}/alerts/${scoped._id}/resolve`, {
+      method: "PATCH", headers: { authorization: `Bearer ${keyB}` },
+    });
+    assert.equal(cannotResolve.status, 404);
+    const canResolve = await fetch(`${base}/alerts/${scoped._id}/resolve`, {
+      method: "PATCH", headers: { authorization: `Bearer ${keyA}` },
+    });
+    assert.equal(canResolve.status, 200);
+  });
+});
+
+test("monitor history routes require workspace auth and preserve the workspace scope", async () => {
+  const workspaceId = "a".repeat(24);
+  const monitorId = "b".repeat(24);
+  const accessKey = "k".repeat(43);
+  const calls = [];
+  const workspaceService = {
+    async authenticateWorkspace(id, key) { return id === workspaceId && key === accessKey ? { _id: workspaceId } : null; },
+  };
+  const monitorRepository = {
+    async findById(ownerId, id) { return ownerId === workspaceId && id === monitorId ? { _id: monitorId, workspace_id: workspaceId } : null; },
+  };
+  const checkHistoryService = {
+    async list(ownerId, id, query) { calls.push(["list", ownerId, id, query]); return { checks: [], pagination: { page: query.page, limit: query.limit, total: 0, total_pages: 0 } }; },
+    async summary(ownerId, monitor, id) { calls.push(["summary", ownerId, id]); return { state: "up" }; },
+  };
+  const path = `/workspaces/${workspaceId}/monitors/${monitorId}`;
+  await withServer({ workspaceService, monitorRepository, checkHistoryService }, async (base) => {
+    assert.equal((await fetch(`${base}${path}/checks`)).status, 401);
+    const headers = { authorization: `Bearer ${accessKey}` };
+    const checks = await fetch(`${base}${path}/checks?page=2&limit=10`, { headers });
+    assert.equal(checks.status, 200);
+    assert.deepEqual(calls[0], ["list", workspaceId, monitorId, { page: 2, limit: 10 }]);
+    const invalid = await fetch(`${base}${path}/checks?limit=500`, { headers });
+    assert.equal(invalid.status, 400);
+    const summary = await fetch(`${base}${path}/summary`, { headers });
+    assert.deepEqual(await summary.json(), { summary: { state: "up" } });
+  });
+});
+
+test("check now endpoint is limited per workspace and per monitor", async () => {
+  const workspaceId = "a".repeat(24);
+  const monitorId = "b".repeat(24);
+  const accessKey = "k".repeat(43);
+  let runs = 0;
+  const workspaceService = {
+    async authenticateWorkspace(id, key) { return id === workspaceId && key === accessKey ? { _id: workspaceId } : null; },
+  };
+  const monitorCheckService = {
+    async runNow(ownerId, id) { runs += 1; return { outcome: "ok", status: "healthy", alert_id: null, check: { status_code: 200 } }; },
+  };
+  await withServer({
+    workspaceService,
+    monitorCheckService,
+    monitorSettings: {
+      checkNowWorkspaceMax: 1, checkNowWorkspaceWindowMs: 60_000,
+      checkNowMonitorMax: 1, checkNowMonitorWindowMs: 60_000,
+    },
+  }, async (base) => {
+    const endpoint = `${base}/workspaces/${workspaceId}/monitors/${monitorId}/check`;
+    const options = { method: "POST", headers: { authorization: `Bearer ${accessKey}` } };
+    assert.equal((await fetch(endpoint, options)).status, 200);
+    const limited = await fetch(endpoint, options);
+    assert.equal(limited.status, 429);
+    assert.equal((await limited.json()).error.code, "RATE_LIMITED");
+    assert.equal(runs, 1);
+  });
+});
+
 test("GET /alerts status filter and pagination return newest resolved pages", async () => {
   const alertService = makeMemoryAlertService();
   const older = await alertService.saveAlert({ api_name: "AppointmentAPI", anomaly_types: ["records_returned_anomaly"], severity: "critical" }, {}, "Old", "fallback");
@@ -424,7 +599,7 @@ test("workspace provisioning sets a secure HTTP-only cookie and reveals keys onl
     assert.match(cookie, /HttpOnly/);
     assert.match(cookie, /SameSite=Lax/);
     assert.match(cookie, /Secure/);
-    assert.match(cookie, new RegExp(`Path=/workspaces/${workspaceId}`));
+    assert.match(cookie, /Path=\//);
 
     const cli = await fetch(`${base}/workspaces`, {
       method: "POST",

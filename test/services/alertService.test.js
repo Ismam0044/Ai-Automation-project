@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import test from "node:test";
 import { Alert } from "../../src/models/alert.js";
 import {
@@ -22,8 +22,28 @@ const snapshot = {
 test("dedupe key sorts and deduplicates anomaly type names", () => {
   assert.equal(
     buildDedupeKey("AppointmentAPI", ["zero_records", "failed_request", "zero_records"]),
-    "AppointmentAPI|failed_request|zero_records",
+    "shared|demo|AppointmentAPI|failed_request|zero_records",
   );
+});
+
+test("identical checks in two workspaces create separate scoped alerts", async () => {
+  const created = [];
+  const service = createAlertService({ AlertModel: {
+    async findOneAndUpdate() { return null; },
+    async create(document) { created.push(document); return document; },
+  } });
+  await service.saveAlert(detection, snapshot, "A", "fallback", { workspaceId: "workspace-a", monitorId: "monitor-a" });
+  await service.saveAlert(detection, snapshot, "B", "fallback", { workspaceId: "workspace-b", monitorId: "monitor-a" });
+  assert.notEqual(created[0].dedupe_key, created[1].dedupe_key);
+  assert.equal(created[0].workspace_id, "workspace-a");
+  assert.equal(created[1].workspace_id, "workspace-b");
+  assert.equal(created[0].monitor_id, "monitor-a");
+  assert.equal(created[1].monitor_id, "monitor-a");
+  assert.deepEqual(created[0].anomaly_types, created[1].anomaly_types);
+  assert.deepEqual(created[0].input_snapshot, created[1].input_snapshot);
+  assert.match(created[0].dedupe_key, /^workspace-a\|monitor-a\|/);
+  assert.match(created[1].dedupe_key, /^workspace-b\|monitor-a\|/);
+  assert.notEqual(created[0].dedupe_key, created[1].dedupe_key);
 });
 
 test("active dedupe index is unique on dedupe_key only", () => {
@@ -43,7 +63,7 @@ test("alert schema supplies active, occurrence, message source, sorted types, an
     anomaly_types: ["zero_records", "failed_request"],
     severity: "critical",
     message: "Placeholder",
-    dedupe_key: "AppointmentAPI|failed_request|zero_records",
+    dedupe_key: "shared|demo|AppointmentAPI|failed_request|zero_records",
   });
 
   assert.equal(alert.status, "active");
@@ -70,7 +90,7 @@ test("saving updates an existing active alert and increments its occurrence coun
 
   assert.equal(result, existingAlert);
   assert.deepEqual(calls[0][0], {
-    dedupe_key: "AppointmentAPI|failed_request|zero_records",
+    dedupe_key: "shared|demo|AppointmentAPI|failed_request|zero_records",
     status: "active",
   });
   assert.deepEqual(calls[0][1].$inc, { occurrence_count: 1 });
@@ -98,7 +118,7 @@ test("saving a new alert uses the active status and initial occurrence count", a
   assert.equal(created.status, "active");
   assert.equal(created.occurrence_count, 1);
   assert.equal(created.message, PLACEHOLDER_ALERT_MESSAGE);
-  assert.equal(created.dedupe_key, "AppointmentAPI|failed_request|zero_records");
+  assert.equal(created.dedupe_key, "shared|demo|AppointmentAPI|failed_request|zero_records");
 });
 
 test("duplicate key from concurrent creation retries as an update", async () => {
@@ -107,9 +127,10 @@ test("duplicate key from concurrent creation retries as an update", async () => 
   const updatedAlert = { _id: "concurrent-alert", occurrence_count: 2 };
   const duplicateError = Object.assign(new Error("duplicate key"), { code: 11000 });
   const fakeAlert = {
-    findOneAndUpdate: async () => {
+    findOneAndUpdate: async (filter) => {
       updateCalls += 1;
-      return updateCalls === 1 ? null : updatedAlert;
+      return filter.dedupe_key === "shared|demo|AppointmentAPI|failed_request|zero_records"
+        && updateCalls > 2 ? updatedAlert : null;
     },
     create: async () => {
       createCalls += 1;
@@ -122,7 +143,7 @@ test("duplicate key from concurrent creation retries as an update", async () => 
 
   assert.equal(result, updatedAlert);
   assert.equal(createCalls, 1);
-  assert.equal(updateCalls, 2);
+  assert.equal(updateCalls, 3);
 });
 
 test("healthy detections do not create alerts", async () => {
@@ -157,7 +178,7 @@ test("active alert listing filters status and sorts newest first", async () => {
   const service = createAlertService({ AlertModel: fakeAlert });
 
   assert.equal(await service.listActiveAlerts(), expected);
-  assert.deepEqual(filter, { status: "active" });
+  assert.deepEqual(filter, { status: "active", workspace_id: null });
   assert.deepEqual(sort, { createdAt: -1 });
 });
 
@@ -194,6 +215,7 @@ test("filtered alert listing applies severity ordering and database pagination",
 
   assert.deepEqual(findCalls[0].filter, {
     status: "active",
+    workspace_id: null,
     api_name: /Appointment/i,
     severity: "critical",
   });
@@ -203,10 +225,10 @@ test("filtered alert listing applies severity ordering and database pagination",
   assert.equal(result.alerts[0]._id, "page-result");
   assert.deepEqual(result.pagination, { page: 2, limit: 3, total: 1, total_pages: 1 });
   assert.deepEqual(countCalls, [
-    { status: "active", api_name: /Appointment/i, severity: "critical" },
-    { status: "active", api_name: /Appointment/i },
-    { status: "active", api_name: /Appointment/i, severity: "critical" },
-    { status: "active", api_name: /Appointment/i, severity: "warning" },
+    { status: "active", workspace_id: null, api_name: /Appointment/i, severity: "critical" },
+    { status: "active", workspace_id: null, api_name: /Appointment/i },
+    { status: "active", workspace_id: null, api_name: /Appointment/i, severity: "critical" },
+    { status: "active", workspace_id: null, api_name: /Appointment/i, severity: "warning" },
   ]);
 });
 
@@ -222,7 +244,8 @@ test("resolving by id changes only an active alert to resolved", async () => {
   const service = createAlertService({ AlertModel: fakeAlert });
 
   assert.equal(await service.resolveAlertById("alert-id"), expected);
-  assert.deepEqual(call[0], { _id: "alert-id", status: "active" });
-  assert.deepEqual(call[1], { $set: { status: "resolved" } });
+  assert.deepEqual(call[0], { _id: "alert-id", status: "active", workspace_id: null });
+  assert.deepEqual(call[1], { $set: { status: "resolved", resolution_reason: null } });
   assert.deepEqual(call[2], { new: true, runValidators: true });
 });
+

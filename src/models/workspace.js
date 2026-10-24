@@ -8,6 +8,7 @@ const workspaceSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 workspaceSchema.index({ last_active_at: 1 }, { name: "workspace_inactive_purge" });
+workspaceSchema.index({ access_key_hashes: 1 }, { name: "workspace_key_lookup" });
 
 export const Workspace = mongoose.models.Workspace
   ?? mongoose.model("Workspace", workspaceSchema);

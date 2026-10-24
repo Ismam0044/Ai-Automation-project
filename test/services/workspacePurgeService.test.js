@@ -23,10 +23,18 @@ test("workspace purge removes inactive workspaces, their monitors and links, the
   const links = {
     async deleteMany(filter) { deletedChildren.push(["links", filter]); return { deletedCount: 2 }; },
   };
+  const checks = {
+    async deleteMany(filter) { deletedChildren.push(["checks", filter]); return { deletedCount: 3 }; },
+  };
+  const alerts = {
+    async deleteMany(filter) { deletedChildren.push(["alerts", filter]); return { deletedCount: 1 }; },
+  };
   const purge = createWorkspacePurgeService({
     WorkspaceModel: workspaces,
     MonitorModel: monitors,
     LinkModel: links,
+    CheckModel: checks,
+    AlertModel: alerts,
     monitorRepository: { async reconcileCounters() { reconciled = true; } },
     clock: () => new Date("2026-10-24T00:00:00Z"),
   });
@@ -35,8 +43,12 @@ test("workspace purge removes inactive workspaces, their monitors and links, the
   assert.deepEqual(deletedChildren, [
     ["monitors", { workspace_id: inactive._id }],
     ["links", { workspace_id: inactive._id }],
+    ["checks", { workspace_id: inactive._id }],
+    ["alerts", { workspace_id: inactive._id }],
     ["monitors", { workspace_id: { $nin: [active._id] } }],
     ["links", { workspace_id: { $nin: [active._id] } }],
+    ["checks", { workspace_id: { $nin: [active._id] } }],
+    ["alerts", { workspace_id: { $type: "objectId", $nin: [active._id] } }],
   ]);
   assert.equal(reconciled, true);
 });

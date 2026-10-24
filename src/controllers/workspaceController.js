@@ -8,19 +8,32 @@ function setWorkspaceCookie(response, workspaceId, accessKey, secure) {
   const cookieName = `workspace_${workspaceId}`;
   const parts = [
     `${cookieName}=${accessKey}`,
-    `Path=/workspaces/${workspaceId}`,
+    "Path=/",
     "HttpOnly",
     "SameSite=Lax",
     "Max-Age=2592000",
   ];
   if (secure) parts.push("Secure");
   response.append("Set-Cookie", parts.join("; "));
+  const activeParts = [`workspace_active=${workspaceId}`, "Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=2592000"];
+  if (secure) activeParts.push("Secure");
+  response.append("Set-Cookie", activeParts.join("; "));
 }
 
 const OBJECT_ID_PATTERN = /^[\da-f]{24}$/i;
 
 export function createWorkspaceController(workspaceService, { secureCookies = false } = {}) {
   return {
+    async current(request, response, next) {
+      try {
+        if (!request.workspaceId) throw createHttpError(401, "WORKSPACE_ACCESS_REQUIRED", "A private workspace is not open in this browser.");
+        const workspace = await workspaceService.getWorkspace(request.workspaceId);
+        if (!workspace) throw createHttpError(404, "WORKSPACE_NOT_FOUND", "Workspace was not found.");
+        return response.json({ workspace: { id: String(workspace._id), name: workspace.name } });
+      } catch (error) {
+        return next(error);
+      }
+    },
     async create(request, response, next) {
       try {
         const name = request.body?.name;

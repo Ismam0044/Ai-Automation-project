@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 async function readError(response, fallback) {
   try {
@@ -9,7 +9,7 @@ async function readError(response, fallback) {
   }
 }
 
-export function useAlerts({ status = "active", page = 1, limit = 20, apiName = "", severity = "all" } = {}) {
+export function useAlerts({ status = "active", page = 1, limit = 20, apiName = "", severity = "all", scope = "shared", enabled = true } = {}) {
   const [alerts, setAlerts] = useState([]);
   const [summary, setSummary] = useState({ total: 0, critical: 0, warning: 0 });
   const [pagination, setPagination] = useState({ page, limit, total: 0, total_pages: 0 });
@@ -22,12 +22,12 @@ export function useAlerts({ status = "active", page = 1, limit = 20, apiName = "
   const mounted = useRef(true);
 
   const queryString = useMemo(() => {
-    const query = new URLSearchParams({ status, page: String(page) });
+    const query = new URLSearchParams({ status, page: String(page), limit: String(limit), scope });
     const search = apiName.trim();
     if (search) query.set("api_name", search);
     if (severity !== "all") query.set("severity", severity);
     return query.toString();
-  }, [status, page, limit, apiName, severity]);
+  }, [status, page, limit, apiName, severity, scope]);
 
   const refresh = useCallback(() => setRefreshKey((current) => current + 1), []);
 
@@ -37,16 +37,23 @@ export function useAlerts({ status = "active", page = 1, limit = 20, apiName = "
   }, []);
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      return undefined;
+    }
     const controller = new AbortController();
     let disposed = false;
+    let inFlight = false;
     let timer;
 
     async function load() {
-      if (disposed) return;
+      if (disposed || inFlight || document.hidden) return;
+      inFlight = true;
       setLoading(true);
       try {
         const response = await fetch(`/alerts?${queryString}`, {
           headers: { accept: "application/json" },
+          credentials: "same-origin",
           signal: controller.signal,
         });
         if (!response.ok) throw new Error(await readError(response, `Could not load alerts (${response.status}).`));
@@ -54,12 +61,7 @@ export function useAlerts({ status = "active", page = 1, limit = 20, apiName = "
         if (!Array.isArray(body.alerts)) throw new Error("The server returned an unexpected alerts response.");
         if (disposed) return;
         setAlerts(body.alerts);
-        setPagination(body.pagination ?? {
-          page,
-          limit,
-          total: body.alerts.length,
-          total_pages: body.alerts.length ? 1 : 0,
-        });
+        setPagination(body.pagination ?? { page, limit, total: body.alerts.length, total_pages: body.alerts.length ? 1 : 0 });
         setSummary(body.summary ?? {
           total: body.alerts.length,
           critical: body.alerts.filter((alert) => alert.severity === "critical").length,
@@ -68,40 +70,43 @@ export function useAlerts({ status = "active", page = 1, limit = 20, apiName = "
         setError("");
         setLastUpdated(new Date());
       } catch (requestError) {
-        if (!disposed && requestError.name !== "AbortError") {
-          setError(requestError.message || "Could not load alerts. Check your connection and retry.");
-        }
+        if (!disposed && requestError.name !== "AbortError") setError(requestError.message || "Could not load alerts. Check your connection and retry.");
       } finally {
+        inFlight = false;
         if (!disposed) {
           setLoading(false);
-          timer = window.setTimeout(load, 10_000);
+          timer = window.setTimeout(load, 15_000);
         }
       }
     }
-
+    const onVisibility = () => { if (!document.hidden) { window.clearTimeout(timer); void load(); } };
     void load();
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       disposed = true;
       controller.abort();
       window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [queryString, page, limit, refreshKey]);
+  }, [queryString, page, limit, refreshKey, enabled]);
 
   const resolve = useCallback(async (alertId) => {
     setResolvingIds((current) => new Set(current).add(alertId));
     setResolveErrors((current) => ({ ...current, [alertId]: "" }));
     try {
-      const response = await fetch(`/alerts/${encodeURIComponent(alertId)}/resolve`, { method: "PATCH" });
+      const response = await fetch(`/alerts/${encodeURIComponent(alertId)}/resolve?scope=${scope}`, {
+        method: "PATCH",
+        headers: { accept: "application/json", "content-type": "application/json" },
+        credentials: "same-origin",
+        body: "{}",
+      });
       if (!response.ok) throw new Error(await readError(response, `Could not resolve alert (${response.status}).`));
       if (mounted.current) {
         setAlerts((current) => current.filter((alert) => alert._id !== alertId));
         refresh();
       }
     } catch (requestError) {
-      if (mounted.current) setResolveErrors((current) => ({
-        ...current,
-        [alertId]: requestError.message || "Could not resolve this alert. Please try again.",
-      }));
+      if (mounted.current) setResolveErrors((current) => ({ ...current, [alertId]: requestError.message || "Could not resolve this alert. Please try again." }));
     } finally {
       if (mounted.current) setResolvingIds((current) => {
         const next = new Set(current);
@@ -109,7 +114,7 @@ export function useAlerts({ status = "active", page = 1, limit = 20, apiName = "
         return next;
       });
     }
-  }, [refresh]);
+  }, [refresh, scope]);
 
   return { alerts, summary, pagination, loading, error, lastUpdated, refresh, resolve, resolvingIds, resolveErrors };
 }

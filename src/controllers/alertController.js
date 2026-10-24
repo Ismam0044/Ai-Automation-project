@@ -18,7 +18,7 @@ function parsePositiveInteger(value, field, defaultValue, maximum) {
 }
 
 export function parseAlertsQuery(query, { defaultPageSize = 20, maxPageSize = 50 } = {}) {
-  const allowedKeys = new Set(["status", "limit", "page", "api_name", "severity"]);
+  const allowedKeys = new Set(["status", "limit", "page", "api_name", "severity", "scope"]);
   for (const key of Object.keys(query)) {
     if (!allowedKeys.has(key)) throw invalidQuery(`Unsupported query parameter: ${key}.`);
   }
@@ -38,6 +38,11 @@ export function parseAlertsQuery(query, { defaultPageSize = 20, maxPageSize = 50
     throw invalidQuery("severity must be all, critical, or warning.");
   }
 
+  const scope = query.scope ?? "auto";
+  if (typeof scope !== "string" || !["auto", "workspace", "shared"].includes(scope)) {
+    throw invalidQuery("scope must be auto, workspace, or shared.");
+  }
+
   const page = parsePositiveInteger(query.page, "page", 1);
   const limit = parsePositiveInteger(query.limit, "limit", defaultPageSize, maxPageSize);
   if (page > Math.floor(Number.MAX_SAFE_INTEGER / limit)) {
@@ -50,6 +55,7 @@ export function parseAlertsQuery(query, { defaultPageSize = 20, maxPageSize = 50
     limit,
     apiName: apiName.trim(),
     severity,
+    scope,
   };
 }
 
@@ -58,11 +64,12 @@ export function createAlertController(alertService, { defaultPageSize = 20, maxP
     async listActive(request, response, next) {
       try {
         if (Object.keys(request.query).length === 0) {
-          const alerts = await alertService.listActiveAlerts();
+          const alerts = await alertService.listActiveAlerts({ workspaceId: request.workspaceId ?? null });
           return response.json({ alerts });
         }
         const query = parseAlertsQuery(request.query, { defaultPageSize, maxPageSize });
-        const result = await alertService.listAlerts(query);
+        const workspaceId = query.scope === "shared" ? null : request.workspaceId ?? null;
+        const result = await alertService.listAlerts({ ...query, workspaceId });
         return response.json({ alerts: result.alerts, pagination: result.pagination, summary: result.summary });
       } catch (error) {
         return next(error);
@@ -74,7 +81,8 @@ export function createAlertController(alertService, { defaultPageSize = 20, maxP
         if (!OBJECT_ID_PATTERN.test(request.params.id)) {
           throw createHttpError(400, "INVALID_ALERT_ID", "Alert id must be a valid 24-character hexadecimal id.");
         }
-        const alert = await alertService.resolveAlertById(request.params.id);
+        const scope = request.query.scope === "shared" ? null : request.workspaceId ?? null;
+        const alert = await alertService.resolveAlertById(request.params.id, { workspaceId: scope });
         if (!alert) throw createHttpError(404, "ALERT_NOT_FOUND", "No active alert was found with that id.");
         response.json({ alert });
       } catch (error) {

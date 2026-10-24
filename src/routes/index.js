@@ -3,6 +3,7 @@ import {
   listAlerts,
   listActiveAlerts,
   resolveAlertById,
+  resolveMonitorAlerts,
   saveAlert,
 } from "../services/alertService.js";
 import { generateAlertMessage } from "../services/llmService.js";
@@ -12,21 +13,26 @@ import { createMonitorController } from "../controllers/monitorController.js";
 import { createMonitorResourceController } from "../controllers/monitorResourceController.js";
 import { createWorkspaceAccessController, createWorkspaceController } from "../controllers/workspaceController.js";
 import { createMonitorRepository } from "../services/monitorRepository.js";
+import { createMonitorCheckService } from "../services/monitorCheckService.js";
+import { createCheckHistoryService } from "../services/checkHistoryService.js";
 import { createWorkspaceService } from "../services/workspaceService.js";
 import { createWorkspaceAccessLinkService } from "../services/workspaceAccessLinkService.js";
-import { validatePublicUrl } from "../services/publicUrlValidator.js";
+import { createOptionalWorkspaceAuth } from "../middleware/workspaceAuth.js";
+import { createPublicUrlValidator } from "../services/publicUrlValidator.js";
 import { createAlertRoutes } from "./alertRoutes.js";
 import healthRoutes from "./healthRoutes.js";
 import { createMonitorRoutes } from "./monitorRoutes.js";
 import { createWorkspaceRoutes } from "./workspaceRoutes.js";
 
 export function createApiRoutes({
-  alertService = { findActiveAlertForDetection, saveAlert, listActiveAlerts, listAlerts, resolveAlertById },
+  alertService = { findActiveAlertForDetection, saveAlert, listActiveAlerts, listAlerts, resolveAlertById, resolveMonitorAlerts },
   llmService = { generateAlertMessage },
   workspaceService,
   workspaceAccessLinkService,
   monitorRepository,
-  publicUrlValidator = validatePublicUrl,
+  monitorCheckService,
+  checkHistoryService,
+  publicUrlValidator,
   rateLimits,
   settings,
   logger,
@@ -42,7 +48,22 @@ export function createApiRoutes({
     maxMonitorsPerWorkspace: settings.maxMonitorsPerWorkspace,
     maxTotalMonitors: settings.maxTotalMonitors,
   });
+  const effectiveCheckHistoryService = checkHistoryService ?? createCheckHistoryService({
+    retentionDays: settings.checkHistoryRetentionDays,
+  });
+  const effectiveMonitorCheckService = monitorCheckService ?? createMonitorCheckService({
+    monitorRepository: effectiveMonitorRepository,
+    historyService: effectiveCheckHistoryService,
+    alertService,
+    llmService,
+    autoResolveHealthyChecks: settings.autoResolveHealthyChecks,
+    leaseMs: Math.max(settings.monitorCheckLeaseMs, 30_000 + 2 * settings.geminiTimeoutMs + 10_000),
+    responseMaxBytes: settings.monitorResponseMaxBytes,
+    allowPrivateTargets: settings.allowPrivateTargets,
+    logger,
+  });
   const effectiveWorkspaceAccessLinkService = workspaceAccessLinkService ?? createWorkspaceAccessLinkService();
+  const effectivePublicUrlValidator = publicUrlValidator ?? createPublicUrlValidator({ allowPrivateTargets: settings.allowPrivateTargets });
   const alertController = createAlertController(alertService, {
     defaultPageSize: settings.alertsDefaultPageSize,
     maxPageSize: settings.alertsMaxPageSize,
@@ -60,13 +81,16 @@ export function createApiRoutes({
   });
   const monitorResourceController = createMonitorResourceController({
     monitorRepository: effectiveMonitorRepository,
-    validatePublicUrl: publicUrlValidator,
+    validatePublicUrl: effectivePublicUrlValidator,
+    checkHistoryService: effectiveCheckHistoryService,
+    monitorCheckService: effectiveMonitorCheckService,
+    checkHistoryMaxPageSize: settings.checkHistoryMaxPageSize,
   });
 
   return [
     healthRoutes,
     createMonitorRoutes({ controller: monitorController, maxBatchSize: settings.maxBatchSize }),
-    createAlertRoutes(alertController),
+    createAlertRoutes(alertController, createOptionalWorkspaceAuth(effectiveWorkspaceService)),
     createWorkspaceRoutes({
       workspaceController,
       accessController: workspaceAccessController,
@@ -74,6 +98,8 @@ export function createApiRoutes({
       workspaceService: effectiveWorkspaceService,
       workspaceCreateLimiter: rateLimits.workspaceCreate,
       monitorCreateLimiter: rateLimits.monitorCreate,
+      checkNowWorkspaceLimiter: rateLimits.checkNowWorkspace,
+      checkNowMonitorLimiter: rateLimits.checkNowMonitor,
     }),
   ];
 }

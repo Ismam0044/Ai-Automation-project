@@ -92,6 +92,78 @@ export function createMonitorRepository({
     return monitor;
   }
 
+  function dueFilter(now = new Date()) {
+    return {
+      paused: { $ne: true },
+      next_check_at: { $lte: now },
+      $or: [{ lease_until: null }, { lease_until: { $exists: false } }, { lease_until: { $lte: now } }],
+    };
+  }
+
+  async function claimCandidate(filter, { now, leaseMs, jitterMs, random = Math.random } = {}) {
+    const candidate = await MonitorModel.findOne(filter).sort({ next_check_at: 1, _id: 1 }).lean();
+    if (!candidate) return null;
+    const jitter = Math.floor(Math.max(0, Math.min(0.999999, random())) * Math.max(0, jitterMs));
+    const nextCheckAt = new Date(now.getTime() + candidate.interval_seconds * 1000 + jitter);
+    return MonitorModel.findOneAndUpdate(
+      { _id: candidate._id, ...filter },
+      { $set: { lease_until: new Date(now.getTime() + leaseMs), next_check_at: nextCheckAt } },
+      { new: true },
+    );
+  }
+
+  async function claimDueForWorkspace(workspaceId, options = { now: new Date(), leaseMs: 30_000, jitterMs: 0 }) {
+    return claimCandidate({ workspace_id: workspaceId, ...dueFilter(options.now) }, options);
+  }
+
+  async function claimById(workspaceId, monitorId, { now = new Date(), leaseMs = 30_000 } = {}) {
+    return MonitorModel.findOneAndUpdate(
+      {
+        _id: monitorId,
+        workspace_id: workspaceId,
+        paused: { $ne: true },
+        $or: [{ lease_until: null }, { lease_until: { $exists: false } }, { lease_until: { $lte: now } }],
+      },
+      { $set: { lease_until: new Date(now.getTime() + leaseMs) } },
+      { new: true },
+    );
+  }
+
+  async function dueWorkspaceIds(now = new Date()) {
+    const rows = await MonitorModel.aggregate([
+      { $match: dueFilter(now) },
+      { $group: { _id: "$workspace_id", next_due: { $min: "$next_check_at" } } },
+      { $sort: { next_due: 1, _id: 1 } },
+    ]);
+    return rows.map((row) => row._id);
+  }
+
+  async function releaseLease(workspaceId, monitorId) {
+    return MonitorModel.updateOne({ _id: monitorId, workspace_id: workspaceId }, { $set: { lease_until: null } });
+  }
+
+  async function scheduleNextCheck(workspaceId, monitorId, { now = new Date(), intervalSeconds = 300 } = {}) {
+    return MonitorModel.updateOne(
+      { _id: monitorId, workspace_id: workspaceId },
+      { $set: { next_check_at: new Date(now.getTime() + intervalSeconds * 1000) } },
+    );
+  }
+
+  async function incrementHealthyCount(workspaceId, monitorId) {
+    return MonitorModel.findOneAndUpdate(
+      { _id: monitorId, workspace_id: workspaceId },
+      { $inc: { consecutive_healthy_checks: 1 } },
+      { new: true },
+    );
+  }
+
+  async function resetHealthyCount(workspaceId, monitorId) {
+    return MonitorModel.updateOne(
+      { _id: monitorId, workspace_id: workspaceId },
+      { $set: { consecutive_healthy_checks: 0 } },
+    );
+  }
+
   return {
     create,
     list(workspaceId) {
@@ -108,7 +180,21 @@ export function createMonitorRepository({
       );
     },
     remove,
+    dueWorkspaceIds,
+    claimDueForWorkspace,
+    claimById,
+    releaseLease,
+    scheduleNextCheck,
+    incrementHealthyCount,
+    resetHealthyCount,
     async reconcileCounters() {
+      await MonitorModel.updateMany({ paused: { $exists: false } }, { $set: { paused: false } });
+      await MonitorModel.updateMany({ next_check_at: { $exists: false } }, { $set: { next_check_at: new Date() } });
+      await MonitorModel.updateMany({ expected_status_code: { $exists: false } }, { $set: { expected_status_code: 200 } });
+      await MonitorModel.updateMany({ max_response_time_ms: { $exists: false } }, { $set: { max_response_time_ms: 3000 } });
+      await MonitorModel.updateMany({ expect_records: { $exists: false } }, { $set: { expect_records: false } });
+      await MonitorModel.updateMany({ consecutive_healthy_checks: { $exists: false } }, { $set: { consecutive_healthy_checks: 0 } });
+      await MonitorModel.updateMany({ method: "HEAD" }, { $set: { method: "GET" } });
       const total = await MonitorModel.countDocuments({});
       await CapacityModel.findOneAndUpdate(
         { _id: "global" },
