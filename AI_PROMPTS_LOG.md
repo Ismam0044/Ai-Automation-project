@@ -745,3 +745,23 @@ This file records the user's project instructions and prompts as requested. It w
 > Dark control room
 >
 > **Result:** Applied a dark control-room palette across the existing client. Added Lenis with reduced-motion handling, GSAP SplitText for the hero, shadcn/ui style Button/Tabs/Alert Dialog components using Radix, and Lucide icons. Lazy-loaded the Monitors view after Lighthouse identified unused JavaScript on the initial Alerts view. Fixed a Radix tab ARIA reference after the audit. Added the installed packages and versions to the client manifest and README. Full test suite passed 110/110; production client build succeeded. Production-preview Lighthouse scores: Performance 0.73 and Accessibility 0.99 (FCP 1.7 s, LCP 2.7 s, TBT 1,030 ms, CLS 0); it still reports about 65 KiB of unused JavaScript on the initial route. Barba.js, Spector.js, glTF compression tools, KTX2 and AVIF/WebP conversion were not added: this is a React SPA without page-to-page routing, WebGL, 3D models, or raster image assets.
+
+
+## 2026-10-25 ? Final assessment audit and local live verifier
+
+> Branch v2. Do not read or modify .env, do not print secrets, do not commit or push. Do not touch master. Do not contact Atlas or Gemini from your environment.
+>
+> Audit the project against Ai Automation Task.md and prove that the examples work.
+>
+> 1. Requirements table: one row per requirement in ASSESSMENT.md sections 3 to 12 (input methods, 6.1 health monitoring, 6.2 anomaly detection, 6.3 AI alerts, 7.1 storage, 7.2 /alerts, 7.3 frontend, 7.4 optional email, 8 technical, 9 AI prompts file, 11 and 12 deliverables). Columns: requirement, file and line where implemented, evidence (test name or run output), status (Pass, Fail, Not verified). Never mark Pass without evidence you observed.
+> 2. Run the section 5 example JSON exactly as written, through sample-data/api-responses.json and through POST /monitor in an automated test with the database and Gemini mocked. Show the real output and confirm: PatientDataAPI is healthy with no alert, AppointmentAPI is critical, and its fallback message and the mocked model message match the style of the section 6.3 example ("AppointmentAPI failed with status 500 and returned 0 records. Possible outage or data issue.").
+> 3. Also test these cases and show the results: slow response with status 200, zero records with status 200, a 4xx status, missing or wrong typed fields, an empty array, a non array body, a batch of 100, the same example sent twice (one alert, occurrence_count 2), resolve, and GET /alerts returning only active alerts.
+> 4. User flow check for the web app: list every user action the UI offers (load sample, submit JSON, form rows, tabs, filters, resolve, monitors, check now, workspace link) and for each say whether a test proves it or it is Not verified because no browser is available.
+> 5. Write scripts/verify/live.js and the npm script verify:live. I will run it myself against http://localhost:3000 with my real database. It must use only built in fetch, send the section 5 example, check the results above, print one Pass or Fail table with one line of evidence each, never print secrets or bodies, mask any token, and report message_source (model or fallback) as information only. Add tests for its helpers with mocked fetch.
+> 6. Check that README.md has working setup and run instructions for a fresh clone, that AI_PROMPTS_LOG.md exists, and list what is still missing for submission (AI_Prompts.docx, video, email) and who must do it.
+> 7. Run npm test and the client build and show the real output. List problems found, ranked, with proposed fixes. Fix only obvious defects in your own new script.
+> 8. Log this prompt in AI_PROMPTS_LOG.md.
+>
+> Wait for my approval.
+>
+> **Result:** Updated the mocked `/monitor` assessment-sample test to load the exact sample-data JSON; added app-level mocked-Gemini coverage for model and fallback message style; added `scripts/verify/live.js`, the `verify:live` npm script, and mocked-fetch helper tests. Full test suite and client build were run without reading `.env` or contacting external services. The live verifier is for the user to run locally and was not run here.

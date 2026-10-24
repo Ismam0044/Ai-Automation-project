@@ -12,6 +12,7 @@
     "dev:client": "npm --prefix client run dev",
     "build:client": "npm --prefix client run build",
     "check:env": "node scripts/check-env.js",
+    "verify:live": "node scripts/verify/live.js",
     "test": "node --test",
     "predev": "npm --prefix client run build"
   },

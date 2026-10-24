@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -116,10 +116,7 @@ async function withServer(options, run) {
   }
 }
 
-const sample = [
-  { api_name: "PatientDataAPI", response_time_ms: 1200, status_code: 200, records_returned: 50 },
-  { api_name: "AppointmentAPI", response_time_ms: 5500, status_code: 500, records_returned: 0 },
-];
+const sample = JSON.parse(await readFile(new URL("../../sample-data/api-responses.json", import.meta.url), "utf8"));
 
 test("GET /health keeps its existing disconnected response shape", async () => {
   await withServer({}, async (base) => {
@@ -195,6 +192,47 @@ test("POST /monitor handles the assessment sample and skips healthy items", asyn
   assert.equal(alertService.records.length, 1);
 });
 
+test("section 5 sample file flows through POST /monitor with model and fallback messages in the section 6.3 style", async () => {
+  const expectedEnding = "Possible outage or data issue.";
+  const mockLogger = { info() {}, warn() {}, error() {} };
+
+  for (const [source, generateContent] of [
+    ["model", async () => ({ text: "AppointmentAPI failed with status 500 and returned 0 records. Possible outage or data issue." })],
+    ["fallback", async () => { throw new Error("mock Gemini outage"); }],
+  ]) {
+    const alertService = makeMemoryAlertService();
+    let modelCalls = 0;
+    const llmService = createLlmService({
+      client: { models: { async generateContent(...args) { modelCalls += 1; return generateContent(...args); } } },
+      model: "mock-model",
+      apiKey: "mock-key",
+      timeoutMs: 1000,
+      usageService: { async reserveGeminiCall() { return { allowed: true }; } },
+      logger: mockLogger,
+    });
+
+    await withServer({ alertService, llmService }, async (base) => {
+      const response = await fetch(`${base}/monitor`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(sample),
+      });
+      assert.equal(response.status, 200);
+      const result = await response.json();
+      assert.equal(result.healthy_count, 1);
+      assert.equal(result.anomalies_created, 1);
+      assert.deepEqual(result.results.map(({ api_name, status, severity }) => ({ api_name, status, severity })), [
+        { api_name: "PatientDataAPI", status: "healthy", severity: "none" },
+        { api_name: "AppointmentAPI", status: "created", severity: "critical" },
+      ]);
+    });
+
+    assert.equal(alertService.records.length, 1);
+    assert.equal(alertService.records[0].message_source, source);
+    assert.match(alertService.records[0].message, /^AppointmentAPI failed with status 500(?:,| and) returned 0 records/);
+    assert.ok(alertService.records[0].message.endsWith(expectedEnding));
+    assert.equal(modelCalls, source === "model" ? 1 : 2);
+  }
+});
+
 test("POST /monitor rejects non-array input with consistent JSON error", async () => {
   await withServer({}, async (base) => {
     const response = await fetch(`${base}/monitor`, {
@@ -233,11 +271,15 @@ test("duplicate submission increments occurrence count without another LLM call"
   }, async (base) => {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const response = await fetch(`${base}/monitor`, {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify([sample[1]]),
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(sample),
       });
       const summary = await response.json();
       assert.equal(response.status, 200);
       assert.equal(summary[attempt === 0 ? "anomalies_created" : "anomalies_updated"], 1);
+      assert.equal(summary.healthy_count, 1);
+      assert.equal(summary.results[0].api_name, "PatientDataAPI");
+      assert.equal(summary.results[0].status, "healthy");
+      assert.equal(summary.results[1].api_name, "AppointmentAPI");
     }
   });
   assert.equal(llmCalls, 1);
