@@ -77,14 +77,14 @@ function AlertCard({ alert, resolving, resolveError, onResolve, isResolved }) {
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dotClass}`} aria-hidden="true" />
-          <h3 className="m-0 break-words text-base font-bold text-[#172b4d]">{alert.api_name}</h3>
+          <h3 className="m-0 wrap-break-word text-base font-bold text-[#172b4d]">{alert.api_name}</h3>
         </div>
         <span className={`shrink-0 rounded-full border px-3 py-1 text-[11px] font-bold ${severityClasses}`}>
           {critical ? "Critical" : "Warning"}
         </span>
       </div>
       <AnomalyTags types={alert.anomaly_types} />
-      <p className="mt-4 mb-0 break-words text-sm leading-6 text-[#475467]">{alert.message}</p>
+      <p className="mt-4 mb-0 wrap-break-word text-sm leading-6 text-[#475467]">{alert.message}</p>
       <div className="mt-5 flex flex-col gap-3 border-t border-[#eaecf0] pt-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-[#667085]">
           <span className="font-semibold text-[#667085]">{alert.occurrence_count ?? 1} {alert.occurrence_count === 1 ? "occurrence" : "occurrences"}</span>
@@ -263,7 +263,7 @@ export default function App() {
               <TabsTrigger value="active">Active</TabsTrigger>
               <TabsTrigger value="resolved">Resolved</TabsTrigger>
             </TabsList>
-            <div className="grid gap-3 sm:grid-cols-2 md:min-w-[26rem]">
+            <div className="grid gap-3 sm:grid-cols-2 md:min-w-104">
               <div>
                 <label htmlFor="api-search" className="mb-1.5 block text-xs font-bold text-[#475467]">Search API name</label>
                 <input
