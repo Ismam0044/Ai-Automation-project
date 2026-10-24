@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import Hero from "./components/Hero.jsx";
 import MonitorPanel, { assessmentSampleText } from "./components/MonitorPanel.jsx";
-import MonitorsExperience from "./components/MonitorsExperience.jsx";
 import WorkspaceLink from "./components/WorkspaceLink.jsx";
 import { useWorkspace } from "./useWorkspace.js";
 import { useAlerts } from "./useAlerts.js";
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "./components/ui/tabs.jsx";
 import { Activity } from "lucide-react";
+
+const MonitorsExperience = lazy(() => import("./components/MonitorsExperience.jsx"));
 
 const anomalyLabels = {
   http_status_failure_critical: "HTTP status failure",
@@ -290,7 +291,7 @@ export default function App() {
             </div>
           </div>
 
-          <TabsContent value={status} id="alert-results">
+          <TabsContent value={status}>
           <AlertSummary summary={summary} status={status} />
 
           {error && alerts.length > 0 && (
@@ -347,7 +348,7 @@ export default function App() {
         </section> : <section className="space-y-4" aria-label="Monitors view">
           {workspaceLoading ? <PageState title="Opening your private workspace" detail="Creating a private browser workspace if this is your first visit…" />
             : workspaceError ? <PageState title="Workspace unavailable" detail={workspaceError} action={<button className="mt-4 min-h-10 rounded-lg bg-[#5eead4] px-4 text-sm font-bold text-[#07110f] focus-visible:outline-2 focus-visible:outline-[#5eead4]" type="button" onClick={() => window.location.reload()}>Retry</button>} />
-              : workspace ? <MonitorsExperience workspace={workspace} /> : null}
+              : workspace ? <Suspense fallback={<PageState title="Loading monitors" detail="Opening the monitor dashboard…" />}><MonitorsExperience workspace={workspace} /></Suspense> : null}
         </section>}
       </div>
     </main>

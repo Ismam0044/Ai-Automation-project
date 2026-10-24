@@ -734,3 +734,14 @@ This file records the user's project instructions and prompts as requested. It w
 > Do only this. Wait for my approval.
 >
 > **Result:** Removed Vercel and Render config, entry points, cron routes/controllers/tests, serverless Mongo-backed rate-limit and scheduler coordination code, and index-sync tooling. Removed the two deployment guides and deployment-only environment placeholders; retained local scheduler, purge, rate limits, database initialization, and application settings. Verification: npm test passed 110/110; client build succeeded. Confirmed the dev script runs its client prebuild, starts nodemon, and launches src/server.js using an empty temporary dotenv file and a loopback-only test URI (so the project .env was not read). The app then stopped with its sanitized MongoDB connection failure because no local MongoDB daemon is listening on 127.0.0.1:27017. The dev script and startup wiring remain intact; successful listening requires a running local database or a configured Atlas URI.
+
+
+## 2026-10-25 ? Dark control-room visual system
+
+> Lenis ,SplitText, shadcn/ui + Radix, Barba.js,Draco/Meshopt compression and gltf-transform for 3D models, KTX2 textures, AVIF/WebP images, Lighthouse and Spector.js to find bottlenecks.
+>
+> yes for this project and change the theme
+>
+> Dark control room
+>
+> **Result:** Applied a dark control-room palette across the existing client. Added Lenis with reduced-motion handling, GSAP SplitText for the hero, shadcn/ui style Button/Tabs/Alert Dialog components using Radix, and Lucide icons. Lazy-loaded the Monitors view after Lighthouse identified unused JavaScript on the initial Alerts view. Fixed a Radix tab ARIA reference after the audit. Added the installed packages and versions to the client manifest and README. Full test suite passed 110/110; production client build succeeded. Production-preview Lighthouse scores: Performance 0.73 and Accessibility 0.99 (FCP 1.7 s, LCP 2.7 s, TBT 1,030 ms, CLS 0); it still reports about 65 KiB of unused JavaScript on the initial route. Barba.js, Spector.js, glTF compression tools, KTX2 and AVIF/WebP conversion were not added: this is a React SPA without page-to-page routing, WebGL, 3D models, or raster image assets.

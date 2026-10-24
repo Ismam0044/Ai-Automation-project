@@ -50,6 +50,7 @@ function PreviewCard({ alert, index }) {
     },
   };
   const tone = tones[alert.color];
+  const AlertIcon = alert.icon;
 
   return (
     <article
@@ -66,7 +67,7 @@ function PreviewCard({ alert, index }) {
           </span>
         </div>
         <p className="mt-3 flex items-center gap-2 text-xs leading-5 text-[#9badb8]">
-          <alert.icon className={`h-4 w-4 ${tone.mark}`} strokeWidth={2.5} aria-hidden="true" />
+          <AlertIcon className={`h-4 w-4 ${tone.mark}`} strokeWidth={2.5} aria-hidden="true" />
           {alert.detail}
         </p>
       </div>
