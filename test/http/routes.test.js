@@ -356,6 +356,8 @@ test("GET /alerts returns active alert list newest first", async () => {
   const old = await alertService.saveAlert({ api_name: "Old", anomaly_types: ["records_returned_anomaly"], severity: "warning" }, {}, "Old.", "fallback");
   await new Promise((resolve) => setTimeout(resolve, 2));
   const newest = await alertService.saveAlert({ api_name: "New", anomaly_types: ["records_returned_anomaly"], severity: "warning" }, {}, "New.", "fallback");
+  const resolved = await alertService.saveAlert({ api_name: "Resolved", anomaly_types: ["records_returned_anomaly"], severity: "warning" }, {}, "Resolved.", "fallback");
+  resolved.status = "resolved";
   await withServer({ alertService }, async (base) => {
     const response = await fetch(`${base}/alerts`);
     assert.equal(response.status, 200);
@@ -363,6 +365,7 @@ test("GET /alerts returns active alert list newest first", async () => {
     assert.deepEqual(Object.keys(body), ["alerts"], "bare GET /alerts keeps the existing response shape");
     assert.deepEqual(body.alerts.map((item) => item._id), [newest._id, old._id]);
     assert.equal(body.alerts[0].status, "active");
+    assert.equal(body.alerts.some((item) => item._id === resolved._id), false, "resolved records are excluded from the default endpoint");
   });
 });
 
