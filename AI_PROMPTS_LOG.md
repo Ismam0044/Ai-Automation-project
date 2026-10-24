@@ -786,3 +786,10 @@ This file records the user's project instructions and prompts as requested. It w
 > Goal: Create a polished, lightweight, modern UI that looks professional, feels effortless to use, and perfectly fits this application.
 >
 > **Result:** Replaced the dark decorative treatment with a restrained light slate-and-blue dashboard, unified alert, monitor, form, tab, and dialog colors, and kept readable red/amber/green severity states. Removed GSAP, SplitText, Lenis, and their wrappers because the requested UI does not need entrance or floating animations. Updated README dependency and CSP wording. Client build passed: 2,048 modules; main JS 312.50 kB (97.88 kB gzip), CSS 27.78 kB (6.38 kB gzip), monitor chunk 52.36 kB (15.89 kB gzip).
+
+
+## 2026-10-25 ? Restore GSAP and Lenis
+
+> use gsap and lemnis
+>
+> **Result:** Restored GSAP `3.15.0` with `@gsap/react` `2.1.2` for a short staggered hero entrance, and Lenis `1.3.27` for smooth scrolling. Both honor reduced-motion preferences; React effects and GSAP context clean up on unmount. Updated client dependencies, lockfile, and README.

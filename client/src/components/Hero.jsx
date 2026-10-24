@@ -1,5 +1,10 @@
+import { useRef } from "react";
+import gsap from "gsap";
+import { useGSAP } from "@gsap/react";
 import { Activity, ArrowDown, CircleCheck, Timer, TriangleAlert } from "lucide-react";
 import { Button } from "./ui/button.jsx";
+
+gsap.registerPlugin(useGSAP);
 
 const previewAlerts = [
   {
@@ -45,6 +50,30 @@ function PreviewCard({ alert }) {
 }
 
 export default function Hero({ onLoadSample }) {
+  const heroRef = useRef(null);
+
+  useGSAP(() => {
+    const motion = gsap.matchMedia();
+    motion.add("(prefers-reduced-motion: no-preference)", () => {
+      const entrance = gsap.timeline({ defaults: { ease: "power1.out" } });
+      entrance.from(".hero-enter", {
+        autoAlpha: 0,
+        y: 10,
+        duration: 0.38,
+        stagger: 0.06,
+        clearProps: "all",
+      });
+      entrance.from(".hero-card", {
+        autoAlpha: 0,
+        y: 8,
+        duration: 0.32,
+        stagger: 0.06,
+        clearProps: "all",
+      }, "-=0.18");
+    });
+    return () => motion.revert();
+  }, { scope: heroRef });
+
   function scrollToChecks() {
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     document.getElementById("submit-checks")?.scrollIntoView({
@@ -54,19 +83,19 @@ export default function Hero({ onLoadSample }) {
   }
 
   return (
-    <section className="grid gap-8 rounded-2xl border border-slate-200 bg-white p-6 sm:p-9 lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:p-12">
+    <section ref={heroRef} className="grid gap-8 rounded-2xl border border-slate-200 bg-white p-6 sm:p-9 lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:p-12">
       <div className="max-w-2xl">
-        <p className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-blue-700">
+        <p className="hero-enter mb-4 inline-flex items-center gap-2 text-sm font-semibold text-blue-700">
           <Activity className="h-4 w-4" aria-hidden="true" />
           API monitoring, made clear
         </p>
-        <h1 className="m-0 max-w-xl text-3xl font-semibold leading-tight tracking-tight text-slate-950 sm:text-4xl lg:text-5xl">
+        <h1 className="hero-enter m-0 max-w-xl text-3xl font-semibold leading-tight tracking-tight text-slate-950 sm:text-4xl lg:text-5xl">
           Catch API issues. Get alerts you can act on.
         </h1>
-        <p className="mb-0 mt-4 max-w-xl text-base leading-7 text-slate-600">
+        <p className="hero-enter mb-0 mt-4 max-w-xl text-base leading-7 text-slate-600">
           Monitor response checks and turn problems into short, readable AI-written alerts.
         </p>
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+        <div className="hero-enter mt-6 flex flex-col gap-3 sm:flex-row">
           <Button size="lg" onClick={scrollToChecks}>
             Try it now <ArrowDown className="h-4 w-4" aria-hidden="true" />
           </Button>
@@ -75,11 +104,11 @@ export default function Hero({ onLoadSample }) {
       </div>
 
       <div className="space-y-3" aria-label="Synthetic alert examples">
-        <div className="flex items-center justify-between gap-3">
+        <div className="hero-card flex items-center justify-between gap-3">
           <h2 className="m-0 text-sm font-semibold text-slate-800">Example alerts</h2>
           <span className="text-xs text-slate-500">Synthetic data</span>
         </div>
-        {previewAlerts.map((alert) => <PreviewCard key={alert.api} alert={alert} />)}
+        {previewAlerts.map((alert) => <div className="hero-card" key={alert.api}><PreviewCard alert={alert} /></div>)}
       </div>
     </section>
   );

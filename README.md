@@ -10,8 +10,10 @@ This project accepts batches of API response checks, detects unhealthy results w
 - Google Gemini via `@google/genai`
 - React and Vite
 - Tailwind CSS `4.3.3` with the `@tailwindcss/vite` plugin `4.3.3`
+- GSAP `3.15.0` with `@gsap/react` `2.1.2` for a brief, reduced-motion-aware hero entrance
+- Lenis `1.3.27` for smooth scrolling, disabled when reduced motion is requested
 - shadcn/ui style components built on Radix UI `1.8.1`, with `lucide-react` icons
-- A restrained light dashboard theme with system font fallbacks and no animation framework
+- A restrained light dashboard theme with system font fallbacks and minimal motion
 - Node's built-in test runner with mocked services/database in tests
 
 ## Prerequisites
