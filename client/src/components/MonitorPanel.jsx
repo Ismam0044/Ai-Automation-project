@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Braces, Upload } from "lucide-react";
+import { Upload } from "lucide-react";
 
 export const assessmentSample = [
   {

@@ -10,7 +10,9 @@ This project accepts batches of API response checks, detects unhealthy results w
 - Google Gemini via `@google/genai`
 - React and Vite
 - Tailwind CSS `4.3.3` with the `@tailwindcss/vite` plugin `4.3.3`
-- GSAP `3.15.0` with its React `useGSAP` hook from `@gsap/react` `2.1.2`
+- GSAP `3.15.0`, its `SplitText` plugin, and the React `useGSAP` hook from `@gsap/react` `2.1.2`
+- Lenis `1.3.27` for smooth scrolling, disabled when reduced motion is requested
+- shadcn/ui style components built on Radix UI `1.8.1`, with `lucide-react` icons
 - Node's built-in test runner with mocked services/database in tests
 
 ## Prerequisites
