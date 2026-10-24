@@ -1,8 +1,11 @@
 import { useRef } from "react";
 import gsap from "gsap";
+import { SplitText } from "gsap/SplitText";
+import { Button } from "./ui/button.jsx";
+import { Activity, ArrowDown, CircleCheck, Sparkles, Timer, TriangleAlert } from "lucide-react";
 import { useGSAP } from "@gsap/react";
 
-gsap.registerPlugin(useGSAP);
+gsap.registerPlugin(useGSAP, SplitText);
 
 const previewAlerts = [
   {
@@ -10,14 +13,14 @@ const previewAlerts = [
     status: "Critical",
     detail: "Failed with status 500 · 5.5 s",
     color: "red",
-    icon: "!",
+    icon: TriangleAlert,
   },
   {
     api: "BillingAPI",
     status: "Warning",
     detail: "Responded slowly · 3.8 s",
     color: "amber",
-    icon: "~",
+    icon: Timer,
   },
   {
     api: "PatientDataAPI",
@@ -31,17 +34,17 @@ const previewAlerts = [
 function PreviewCard({ alert, index }) {
   const tones = {
     red: {
-      marker: "bg-red-950/350",
+      marker: "bg-red-500",
       badge: "border-red-900/70 bg-red-950/35 text-red-200",
       mark: "text-red-300",
     },
     amber: {
-      marker: "bg-amber-950/300",
+      marker: "bg-amber-500",
       badge: "border-amber-800/70 bg-amber-950/30 text-amber-200",
       mark: "text-amber-300",
     },
     green: {
-      marker: "bg-emerald-950/300",
+      marker: "bg-emerald-500",
       badge: "border-emerald-800/70 bg-emerald-950/30 text-emerald-200",
       mark: "text-emerald-300",
     },
@@ -63,7 +66,7 @@ function PreviewCard({ alert, index }) {
           </span>
         </div>
         <p className="mt-3 flex items-center gap-2 text-xs leading-5 text-[#9badb8]">
-          <span className={`font-bold ${tone.mark}`} aria-hidden="true">{alert.icon}</span>
+          <alert.icon className={`h-4 w-4 ${tone.mark}`} strokeWidth={2.5} aria-hidden="true" />
           {alert.detail}
         </p>
       </div>
@@ -76,8 +79,19 @@ export default function Hero({ onLoadSample }) {
 
   useGSAP(() => {
     const motion = gsap.matchMedia();
+    let headlineSplit;
     motion.add("(prefers-reduced-motion: no-preference)", () => {
-      const entrance = gsap.timeline({ defaults: { ease: "power3.out" } });
+      const headline = heroRef.current?.querySelector(".hero-title");
+      if (headline) {
+        headlineSplit = SplitText.create(headline, {
+          type: "words",
+          autoSplit: true,
+          onSplit(self) {
+            return gsap.from(self.words, { autoAlpha: 0, y: 28, duration: 0.75, stagger: 0.055, ease: "power3.out" });
+          },
+        });
+      }
+      const entrance = gsap.timeline({ delay: 0.45, defaults: { ease: "power3.out" } });
       entrance.from(".hero-enter", {
         autoAlpha: 0,
         y: 22,
@@ -109,7 +123,7 @@ export default function Hero({ onLoadSample }) {
         yoyo: true,
       });
     });
-    return () => motion.revert();
+    return () => { headlineSplit?.revert(); motion.revert(); };
   }, { scope: heroRef });
 
   function scrollToChecks() {
@@ -127,30 +141,22 @@ export default function Hero({ onLoadSample }) {
       <div className="grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:gap-8">
         <div className="max-w-2xl">
           <p className="hero-enter mb-5 inline-flex items-center gap-2 rounded-full border border-cyan-800/70 bg-[#111a24]/80 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-[#75d8d1] shadow-sm">
-            <span className="h-2 w-2 rounded-full bg-emerald-950/300" aria-hidden="true" />
+            <Sparkles className="h-3.5 w-3.5 text-[#5eead4]" aria-hidden="true" />
             Calm, clear API operations
           </p>
-          <h1 className="hero-enter max-w-xl text-4xl font-extrabold leading-[1.06] tracking-[-0.045em] text-[#f1f8fa] sm:text-5xl lg:text-[3.65rem]">
+          <h1 className="hero-title max-w-xl text-4xl font-extrabold leading-[1.06] tracking-[-0.045em] text-[#f1f8fa] sm:text-5xl lg:text-[3.65rem]">
             Catch API issues. Get the clear next sentence.
           </h1>
           <p className="hero-enter mt-5 max-w-xl text-base leading-7 text-[#9badb8] sm:text-lg sm:leading-8">
             Monitor response checks and turn anomalies into readable, AI-written alerts your operations team can act on.
           </p>
           <div className="hero-enter mt-7 flex flex-col gap-3 sm:flex-row">
-            <button
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#5eead4] px-5 text-sm font-bold text-[#07110f] shadow-lg shadow-[#163f67]/15 transition hover:bg-[#91f2e2] focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-[#5eead4]"
-              type="button"
-              onClick={scrollToChecks}
-            >
-              Try it now <span aria-hidden="true">↓</span>
-            </button>
-            <button
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-[#3a4d58] bg-[#111a24]/85 px-5 text-sm font-bold text-[#b7c8d1] transition hover:border-slate-400 hover:bg-[#101820] focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-[#5eead4]"
-              type="button"
-              onClick={onLoadSample}
-            >
-              Load sample <span aria-hidden="true">↗</span>
-            </button>
+            <Button size="lg" className="shadow-lg shadow-[#5eead4]/10" onClick={scrollToChecks}>
+              Try it now <ArrowDown className="h-4 w-4" aria-hidden="true" />
+            </Button>
+            <Button variant="secondary" size="lg" onClick={onLoadSample}>
+              Load sample <span aria-hidden="true">???</span>
+            </Button>
           </div>
           <p className="hero-enter mt-4 text-xs text-[#81939e]">Preview cards are synthetic examples, not live system alerts.</p>
         </div>

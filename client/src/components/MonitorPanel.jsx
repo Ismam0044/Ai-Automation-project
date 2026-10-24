@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Braces, Upload } from "lucide-react";
 
 export const assessmentSample = [
   {
@@ -75,11 +76,11 @@ export default function MonitorPanel({ value, onChange, onLoadSample, onComplete
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[#9badb8]">Send a JSON array of API response checks. Healthy checks are skipped; detected anomalies appear in Active alerts.</p>
         </div>
         <button
-          className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg border border-[#3a4d58] bg-[#101820] px-4 text-sm font-semibold text-[#b7c8d1] transition hover:border-slate-400 hover:bg-[#0b131a] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5eead4]"
+          className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg border border-[#3a4d58] bg-[#101820] px-4 text-sm font-semibold text-[#b7c8d1] transition hover:border-[#52636d] hover:bg-[#0b131a] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5eead4]"
           type="button"
           onClick={onLoadSample}
         >
-          Load assessment sample
+          <Upload className="h-4 w-4" aria-hidden="true" /> Load assessment sample
         </button>
       </div>
 

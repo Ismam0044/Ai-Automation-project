@@ -5,6 +5,8 @@ import MonitorsExperience from "./components/MonitorsExperience.jsx";
 import WorkspaceLink from "./components/WorkspaceLink.jsx";
 import { useWorkspace } from "./useWorkspace.js";
 import { useAlerts } from "./useAlerts.js";
+import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "./components/ui/tabs.jsx";
+import { Activity } from "lucide-react";
 
 const anomalyLabels = {
   http_status_failure_critical: "HTTP status failure",
@@ -23,8 +25,8 @@ function localDate(value) {
 
 function BrandMark() {
   return (
-    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[0.95rem] bg-[#5eead4] text-xs font-extrabold tracking-tight text-[#07110f] shadow-md shadow-[#163f67]/15" aria-hidden="true">
-      AM
+    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[0.95rem] bg-[#5eead4] text-xs font-extrabold tracking-tight text-[#07110f] shadow-md shadow-[#5eead4]/10" aria-hidden="true">
+      <Activity className="h-5 w-5" strokeWidth={2.5} />
     </span>
   );
 }
@@ -37,12 +39,12 @@ function AlertSummary({ summary, status }) {
         <span className="text-sm font-semibold text-[#9badb8]">{status === "active" ? "Active alerts" : "Resolved alerts"}</span>
       </div>
       <div className="flex min-h-24 items-center gap-3 bg-[#101820] px-5 py-4 sm:px-7">
-        <span className="h-2.5 w-2.5 rounded-full bg-red-950/350 shadow-[0_0_0_4px_rgba(239,68,68,0.1)]" aria-hidden="true" />
+        <span className="h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_0_4px_rgba(239,68,68,0.1)]" aria-hidden="true" />
         <span className="text-2xl font-bold text-red-200">{summary.critical}</span>
         <span className="text-sm font-semibold text-[#9badb8]">Critical</span>
       </div>
       <div className="flex min-h-24 items-center gap-3 bg-[#101820] px-5 py-4 sm:px-7">
-        <span className="h-2.5 w-2.5 rounded-full bg-amber-950/300 shadow-[0_0_0_4px_rgba(245,158,11,0.12)]" aria-hidden="true" />
+        <span className="h-2.5 w-2.5 rounded-full bg-amber-500 shadow-[0_0_0_4px_rgba(245,158,11,0.12)]" aria-hidden="true" />
         <span className="text-2xl font-bold text-amber-300">{summary.warning}</span>
         <span className="text-sm font-semibold text-[#9badb8]">Warning</span>
       </div>
@@ -67,7 +69,7 @@ function AlertCard({ alert, resolving, resolveError, onResolve, isResolved }) {
   const severityClasses = critical
     ? "border-red-900/70 bg-red-950/35 text-red-200"
     : "border-amber-800/70 bg-amber-950/30 text-amber-200";
-  const dotClass = critical ? "bg-red-950/350" : "bg-amber-950/300";
+  const dotClass = critical ? "bg-red-500" : "bg-amber-500";
 
   return (
     <article className="rounded-2xl border border-[#293a45] bg-[#101820] p-5 shadow-[0_12px_36px_-30px_rgba(25,51,77,0.4)] sm:p-6">
@@ -91,7 +93,7 @@ function AlertCard({ alert, resolving, resolveError, onResolve, isResolved }) {
         {isResolved ? (
           <span className="inline-flex min-h-9 items-center rounded-lg border border-emerald-800/70 bg-emerald-950/30 px-3 text-xs font-bold text-emerald-200">Resolved</span>
         ) : <button
-          className="inline-flex min-h-10 items-center justify-center rounded-lg border border-[#3a4d58] px-4 text-sm font-semibold text-[#b7c8d1] transition hover:border-red-700 hover:bg-red-950/35 hover:text-red-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5eead4] disabled:cursor-wait disabled:opacity-60"
+          className="inline-flex min-h-10 items-center justify-center rounded-lg border border-[#3a4d58] px-4 text-sm font-semibold text-[#b7c8d1] transition hover:border-red-300 hover:bg-red-950/55 hover:text-red-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5eead4] disabled:cursor-wait disabled:opacity-60"
           type="button"
           aria-label={`Resolve ${alert.api_name} alert`}
           disabled={resolving}
@@ -170,17 +172,6 @@ export default function App() {
     setPage(1);
   }
 
-  function handleTabKeyDown(event) {
-    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-    event.preventDefault();
-    const next = event.key === "Home" ? "active"
-      : event.key === "End" ? "resolved"
-        : event.key === "ArrowRight" ? (status === "active" ? "resolved" : "active")
-          : (status === "active" ? "resolved" : "active");
-    switchStatus(next);
-    document.getElementById(`alerts-tab-${next}`)?.focus();
-  }
-
   function updateSearch(value) {
     setSearch(value);
     setPage(1);
@@ -192,7 +183,7 @@ export default function App() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-7xl px-4 pb-14 pt-5 sm:px-7 sm:pt-8 lg:px-10">
+    <main className="control-room-shell mx-auto w-full max-w-7xl px-4 pb-14 pt-5 sm:px-7 sm:pt-8 lg:px-10">
       <header className="mb-6 flex items-center justify-between gap-4 sm:mb-9">
         <a className="flex min-w-0 items-center gap-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#5eead4]" href="#top" aria-label="API Monitor home">
           <BrandMark />
@@ -249,7 +240,7 @@ export default function App() {
                 {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : "Waiting for first update"}
               </p>
               <button
-                className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#3a4d58] bg-[#101820] px-3 text-sm font-semibold text-[#b7c8d1] transition hover:border-slate-400 hover:bg-[#0b131a] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5eead4] disabled:cursor-wait disabled:opacity-60"
+                className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#3a4d58] bg-[#101820] px-3 text-sm font-semibold text-[#b7c8d1] transition hover:border-[#52636d] hover:bg-[#0b131a] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5eead4] disabled:cursor-wait disabled:opacity-60"
                 type="button"
                 onClick={() => void refresh()}
                 disabled={loading}
@@ -262,27 +253,15 @@ export default function App() {
             </div>
           </div>
 
+          <TabsRoot value={status} onValueChange={switchStatus}>
           <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div className="inline-flex w-fit rounded-xl border border-[#293a45] bg-[#151f28] p-1" role="group" aria-label="Alert list source">
               {[ ["workspace", "My workspace"], ["shared", "Shared demo"] ].map(([value, label]) => <button key={value} type="button" aria-pressed={scope === value} onClick={() => { setScope(value); setPage(1); }} className={`min-h-10 rounded-lg px-3 text-xs font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5eead4] sm:px-4 sm:text-sm ${scope === value ? "bg-[#101820] text-[#d7f9f2] shadow-sm" : "text-[#9badb8] hover:text-[#ecf4f7]"}`}>{label}</button>)}
             </div>
-            <div role="tablist" aria-label="Alert status" onKeyDown={handleTabKeyDown} className="inline-flex w-fit rounded-xl border border-[#293a45] bg-[#151f28] p-1">
-              {[["active", "Active"], ["resolved", "Resolved"]].map(([value, label]) => (
-                <button
-                  key={value}
-                  id={`alerts-tab-${value}`}
-                  type="button"
-                  role="tab"
-                  aria-selected={status === value}
-                  aria-controls="alert-results"
-                  tabIndex={status === value ? 0 : -1}
-                  onClick={() => switchStatus(value)}
-                  className={`min-h-10 rounded-lg px-4 text-sm font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5eead4] ${status === value ? "bg-[#101820] text-[#d7f9f2] shadow-sm" : "text-[#9badb8] hover:text-[#ecf4f7]"}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <TabsList aria-label="Alert status">
+              <TabsTrigger value="active">Active</TabsTrigger>
+              <TabsTrigger value="resolved">Resolved</TabsTrigger>
+            </TabsList>
             <div className="grid gap-3 sm:grid-cols-2 md:min-w-[26rem]">
               <div>
                 <label htmlFor="api-search" className="mb-1.5 block text-xs font-bold text-[#b7c8d1]">Search API name</label>
@@ -311,16 +290,17 @@ export default function App() {
             </div>
           </div>
 
+          <TabsContent value={status} id="alert-results">
           <AlertSummary summary={summary} status={status} />
 
           {error && alerts.length > 0 && (
             <div className="mt-4 flex flex-col justify-between gap-3 rounded-xl border border-red-900/70 bg-red-950/35 px-4 py-3 text-sm text-red-200 sm:flex-row sm:items-center" role="alert">
               <span>{error}</span>
-              <button className="min-h-9 rounded-lg border border-red-900/70 bg-[#101820] px-3 text-xs font-bold text-red-200 hover:bg-red-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700" type="button" onClick={() => void refresh()}>Retry</button>
+              <button className="min-h-9 rounded-lg border border-red-900/70 bg-[#101820] px-3 text-xs font-bold text-red-200 hover:bg-red-950/55 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-300" type="button" onClick={() => void refresh()}>Retry</button>
             </div>
           )}
 
-          <div id="alert-results" role="tabpanel" aria-labelledby={`alerts-tab-${status}`} className="mt-4">
+          <div className="mt-4">
             {loading && alerts.length === 0 ? (
               <PageState title="Loading alerts" detail="Checking for active API issues…" />
             ) : error && alerts.length === 0 ? (
@@ -361,6 +341,8 @@ export default function App() {
               </div>
             </nav>
           )}
+          </TabsContent>
+          </TabsRoot>
           <p className="mt-5 mb-0 text-center text-xs text-[#6d808c]">Automatic refresh every 15 seconds while this tab is visible</p>
         </section> : <section className="space-y-4" aria-label="Monitors view">
           {workspaceLoading ? <PageState title="Opening your private workspace" detail="Creating a private browser workspace if this is your first visit…" />
