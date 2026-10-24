@@ -34,7 +34,7 @@ function BrandMark() {
 
 function AlertSummary({ summary, status }) {
   return (
-    <section className="grid gap-px overflow-hidden rounded-2xl border border-[#e4e7ec] bg-[#263640] shadow-sm sm:grid-cols-3" aria-label={`${status === "active" ? "Active" : "Resolved"} alert summary`}>
+    <section className="grid gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200 sm:grid-cols-3" aria-label={`${status === "active" ? "Active" : "Resolved"} alert summary`}>
       <div className="flex min-h-24 items-center gap-4 bg-[#ffffff] px-5 py-4 sm:px-7">
         <span className="text-3xl font-extrabold tracking-tight text-[#172b4d]">{summary.total}</span>
         <span className="text-sm font-semibold text-[#667085]">{status === "active" ? "Active alerts" : "Resolved alerts"}</span>
@@ -184,7 +184,7 @@ export default function App() {
   }
 
   return (
-    <main className="control-room-shell mx-auto w-full max-w-7xl px-4 pb-14 pt-5 sm:px-7 sm:pt-8 lg:px-10">
+    <main className="app-shell mx-auto w-full max-w-7xl px-4 pb-14 pt-5 sm:px-7 sm:pt-8 lg:px-10">
       <header className="mb-6 flex items-center justify-between gap-4 sm:mb-9">
         <a className="flex min-w-0 items-center gap-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#2563eb]" href="#top" aria-label="API Monitor home">
           <BrandMark />
@@ -257,7 +257,7 @@ export default function App() {
           <TabsRoot value={status} onValueChange={switchStatus}>
           <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div className="inline-flex w-fit rounded-xl border border-[#e4e7ec] bg-[#f2f4f7] p-1" role="group" aria-label="Alert list source">
-              {[ ["workspace", "My workspace"], ["shared", "Shared demo"] ].map(([value, label]) => <button key={value} type="button" aria-pressed={scope === value} onClick={() => { setScope(value); setPage(1); }} className={`min-h-10 rounded-lg px-3 text-xs font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563eb] sm:px-4 sm:text-sm ${scope === value ? "bg-[#ffffff] text-[#d7f9f2] shadow-sm" : "text-[#667085] hover:text-[#172b4d]"}`}>{label}</button>)}
+              {[ ["workspace", "My workspace"], ["shared", "Shared demo"] ].map(([value, label]) => <button key={value} type="button" aria-pressed={scope === value} onClick={() => { setScope(value); setPage(1); }} className={`min-h-10 rounded-lg px-3 text-xs font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563eb] sm:px-4 sm:text-sm ${scope === value ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>{label}</button>)}
             </div>
             <TabsList aria-label="Alert status">
               <TabsTrigger value="active">Active</TabsTrigger>

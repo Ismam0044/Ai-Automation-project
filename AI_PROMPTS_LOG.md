@@ -765,3 +765,24 @@ This file records the user's project instructions and prompts as requested. It w
 > Wait for my approval.
 >
 > **Result:** Updated the mocked `/monitor` assessment-sample test to load the exact sample-data JSON; added app-level mocked-Gemini coverage for model and fallback message style; added `scripts/verify/live.js`, the `verify:live` npm script, and mocked-fetch helper tests. Full test suite and client build were run without reading `.env` or contacting external services. The live verifier is for the user to run locally and was not run here.
+
+
+## 2026-10-25 ? Lightweight monitoring dashboard redesign
+
+> Design a lightweight, simple, modern, and user-friendly UI that fits the purpose and functionality of this application. Keep the interface clean, minimal, and intuitive, with a professional look and feel.
+>
+> Focus on:
+>
+> * Minimalist design: Avoid unnecessary elements, excessive decorations, and visual clutter.
+> * Modern aesthetics: Use clean typography, a consistent color palette, subtle borders, and balanced spacing.
+> * Lightweight performance: Keep the UI fast, responsive, and optimized without unnecessary animations or heavy visual effects.
+> * Easy navigation: Make all essential features easy to find and use.
+> * Consistency: Maintain a consistent design across all pages, components, buttons, forms, and layouts.
+> * Responsive layout: Ensure the application works smoothly on desktop, tablet, and mobile devices.
+> * Functional design: Prioritize usability, accessibility, readability, and the application’s core features over purely decorative elements.
+>
+> Choose a design style, colors, typography, and components that naturally fit the application’s purpose and target users. Preserve all existing functionality, business logic, and essential features. Do not add unnecessary features or overcomplicate the interface.
+>
+> Goal: Create a polished, lightweight, modern UI that looks professional, feels effortless to use, and perfectly fits this application.
+>
+> **Result:** Replaced the dark decorative treatment with a restrained light slate-and-blue dashboard, unified alert, monitor, form, tab, and dialog colors, and kept readable red/amber/green severity states. Removed GSAP, SplitText, Lenis, and their wrappers because the requested UI does not need entrance or floating animations. Updated README dependency and CSP wording. Client build passed: 2,048 modules; main JS 312.50 kB (97.88 kB gzip), CSS 27.78 kB (6.38 kB gzip), monitor chunk 52.36 kB (15.89 kB gzip).

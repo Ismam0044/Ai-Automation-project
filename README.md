@@ -10,9 +10,8 @@ This project accepts batches of API response checks, detects unhealthy results w
 - Google Gemini via `@google/genai`
 - React and Vite
 - Tailwind CSS `4.3.3` with the `@tailwindcss/vite` plugin `4.3.3`
-- GSAP `3.15.0`, its `SplitText` plugin, and the React `useGSAP` hook from `@gsap/react` `2.1.2`
-- Lenis `1.3.27` for smooth scrolling, disabled when reduced motion is requested
 - shadcn/ui style components built on Radix UI `1.8.1`, with `lucide-react` icons
+- A restrained light dashboard theme with system font fallbacks and no animation framework
 - Node's built-in test runner with mocked services/database in tests
 
 ## Prerequisites
@@ -388,7 +387,7 @@ Tests use mocked services and do not require a MongoDB connection or Gemini API 
 
 This app has no accounts, so alerts are shared among its users. The default per-IP limit for `POST /monitor` is 10 requests per 15 minutes; `/alerts` reads and resolves allow 120 requests per IP per 15 minutes. Tune the window and maximum values with the `*_RATE_LIMIT_*` variables. These in-memory limits apply to this local server process.
 
-Helmet adds security headers. The CSP allows scripts, API connections, forms, fonts, and assets from the same origin; `img-src` also permits `data:`. It blocks objects and framing. `style-src 'unsafe-inline'` is enabled because GSAP animates element styles at runtime. The app does not allow inline scripts. `upgrade-insecure-requests` is disabled in development and enabled in production.
+Helmet adds security headers. The CSP allows scripts, API connections, forms, fonts, and assets from the same origin; `img-src` also permits `data:`. It blocks objects and framing. The current policy allows inline styles for component styling, while inline scripts remain blocked. `upgrade-insecure-requests` is disabled in development and enabled in production.
 
 Gemini attempts are counted atomically in one MongoDB counter document per UTC day. The default cap is 25 actual request attempts, including retries. At the cap, the app logs the event once for that day and uses fallback alert messages; alert persistence continues. Set `GEMINI_DAILY_CALL_LIMIT` to adjust the cap.
 
