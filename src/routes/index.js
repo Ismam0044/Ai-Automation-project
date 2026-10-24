@@ -1,5 +1,6 @@
 import {
   findActiveAlertForDetection,
+  listAlerts,
   listActiveAlerts,
   resolveAlertById,
   saveAlert,
@@ -13,7 +14,7 @@ import healthRoutes from "./healthRoutes.js";
 import { createMonitorRoutes } from "./monitorRoutes.js";
 
 export function createApiRoutes({
-  alertService = { findActiveAlertForDetection, saveAlert, listActiveAlerts, resolveAlertById },
+  alertService = { findActiveAlertForDetection, saveAlert, listActiveAlerts, listAlerts, resolveAlertById },
   llmService = { generateAlertMessage },
   settings,
   logger,
@@ -24,7 +25,10 @@ export function createApiRoutes({
     llmService,
     logger,
   });
-  const alertController = createAlertController(alertService);
+  const alertController = createAlertController(alertService, {
+    defaultPageSize: settings.alertsDefaultPageSize,
+    maxPageSize: settings.alertsMaxPageSize,
+  });
   const monitorController = createMonitorController(monitorService);
 
   return [

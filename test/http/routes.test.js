@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 process.env.MONGODB_URI ??= "mongodb://127.0.0.1:27017/mock_only";
 const { createApp } = await import("../../src/app.js");
+const { createLlmService } = await import("../../src/services/llmService.js");
 
 const quietLogger = {
   info() {},
@@ -51,9 +52,32 @@ function makeMemoryAlertService() {
       return records.filter((record) => record.status === "active")
         .sort((left, right) => right.createdAt - left.createdAt);
     },
+    async listAlerts({ status, page, limit, apiName, severity }) {
+      const search = apiName ? apiName.toLowerCase() : "";
+      const matchingStatus = records.filter((record) => record.status === status
+        && (!search || record.api_name.toLowerCase().includes(search)));
+      const matching = matchingStatus.filter((record) => severity === "all" || record.severity === severity);
+      matching.sort((left, right) => status === "resolved"
+        ? right.updatedAt - left.updatedAt
+        : (left.severity === "critical" ? 0 : 1) - (right.severity === "critical" ? 0 : 1)
+          || right.updatedAt - left.updatedAt);
+      const offset = (page - 1) * limit;
+      return {
+        alerts: matching.slice(offset, offset + limit),
+        pagination: { page, limit, total: matching.length, total_pages: Math.ceil(matching.length / limit) },
+        summary: {
+          total: matchingStatus.length,
+          critical: matchingStatus.filter((item) => item.severity === "critical").length,
+          warning: matchingStatus.filter((item) => item.severity === "warning").length,
+        },
+      };
+    },
     async resolveAlertById(id) {
       const record = records.find((item) => item._id === id && item.status === "active");
-      if (record) record.status = "resolved";
+      if (record) {
+        record.status = "resolved";
+        record.updatedAt = new Date();
+      }
       return record ?? null;
     },
   };
@@ -235,8 +259,127 @@ test("GET /alerts returns active alert list newest first", async () => {
     const response = await fetch(`${base}/alerts`);
     assert.equal(response.status, 200);
     const body = await response.json();
+    assert.deepEqual(Object.keys(body), ["alerts"], "bare GET /alerts keeps the existing response shape");
     assert.deepEqual(body.alerts.map((item) => item._id), [newest._id, old._id]);
     assert.equal(body.alerts[0].status, "active");
+  });
+});
+
+test("GET /alerts status filter and pagination return newest resolved pages", async () => {
+  const alertService = makeMemoryAlertService();
+  const older = await alertService.saveAlert({ api_name: "AppointmentAPI", anomaly_types: ["records_returned_anomaly"], severity: "critical" }, {}, "Old", "fallback");
+  const newer = await alertService.saveAlert({ api_name: "BillingAPI", anomaly_types: ["records_returned_anomaly"], severity: "warning" }, {}, "New", "fallback");
+  const active = await alertService.saveAlert({ api_name: "BillingAPI", anomaly_types: ["http_status_failure_warning"], severity: "warning" }, {}, "Active", "fallback");
+  older.status = "resolved";
+  newer.status = "resolved";
+  older.updatedAt = new Date("2026-10-20T10:00:00Z");
+  newer.updatedAt = new Date("2026-10-22T10:00:00Z");
+
+  await withServer({ alertService }, async (base) => {
+    const first = await fetch(`${base}/alerts?status=resolved&limit=1&page=1`);
+    const firstBody = await first.json();
+    assert.equal(first.status, 200);
+    assert.deepEqual(firstBody.alerts.map((item) => item._id), [newer._id]);
+    assert.deepEqual(firstBody.pagination, { page: 1, limit: 1, total: 2, total_pages: 2 });
+
+    const second = await fetch(`${base}/alerts?status=resolved&limit=1&page=1&api_name=Appointment&severity=critical`);
+    const secondBody = await second.json();
+    assert.equal(second.status, 200);
+    assert.deepEqual(secondBody.alerts.map((item) => item._id), [older._id]);
+    assert.deepEqual(secondBody.pagination, { page: 1, limit: 1, total: 1, total_pages: 1 });
+
+    const activeResponse = await fetch(`${base}/alerts?status=active`);
+    const activeBody = await activeResponse.json();
+    assert.deepEqual(activeBody.alerts.map((item) => item._id), [active._id]);
+  });
+});
+
+test("GET /alerts keeps critical alerts ahead across active pages", async () => {
+  const alertService = makeMemoryAlertService();
+  const warning = await alertService.saveAlert({ api_name: "BillingAPI", anomaly_types: ["records_returned_anomaly"], severity: "warning" }, {}, "Warning", "fallback");
+  const critical = await alertService.saveAlert({ api_name: "AppointmentAPI", anomaly_types: ["http_status_failure_critical"], severity: "critical" }, {}, "Critical", "fallback");
+  warning.updatedAt = new Date("2026-10-24T12:00:00Z");
+  critical.updatedAt = new Date("2026-10-24T11:00:00Z");
+
+  await withServer({ alertService }, async (base) => {
+    const response = await fetch(`${base}/alerts?status=active&limit=1&page=1`);
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).alerts.map((item) => item._id), [critical._id]);
+  });
+});
+
+test("GET /alerts rejects invalid query values with a consistent 400 error", async () => {
+  await withServer({}, async (base) => {
+    for (const query of ["status=archived", "limit=51", "limit=0", "page=1.5", "page=9007199254740991", "severity=urgent"]) {
+      const response = await fetch(`${base}/alerts?${query}`);
+      const body = await response.json();
+      assert.equal(response.status, 400, query);
+      assert.equal(body.error.code, "INVALID_ALERT_QUERY", query);
+      assert.equal(typeof body.error.message, "string", query);
+    }
+  });
+});
+
+test("monitor rate limit returns the standard JSON 429 error", async () => {
+  await withServer({ monitorSettings: { monitorRateLimitMax: 1, monitorRateLimitWindowMs: 60000 } }, async (base) => {
+    const first = await fetch(`${base}/monitor`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: "[]",
+    });
+    const limited = await fetch(`${base}/monitor`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: "[]",
+    });
+    assert.equal(first.status, 200);
+    assert.equal(limited.status, 429);
+    assert.deepEqual(await limited.json(), {
+      error: { code: "RATE_LIMITED", message: "Too many requests. Please try again later." },
+    });
+    assert.ok(limited.headers.has("ratelimit-limit"));
+  });
+});
+
+test("Gemini daily cap uses fallback and does not block saving the alert", async () => {
+  const alertService = makeMemoryAlertService();
+  let providerCalls = 0;
+  const llmService = createLlmService({
+    client: { models: { async generateContent() { providerCalls += 1; return { text: "must not be called" }; } } },
+    apiKey: "test-key",
+    model: "mock-model",
+    usageService: { async reserveGeminiCall() { return { allowed: false, day: "2026-10-24", logRequired: true }; } },
+    findActiveAlert: async () => null,
+    logger: quietLogger,
+  });
+
+  await withServer({ alertService, llmService }, async (base) => {
+    const response = await fetch(`${base}/monitor`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify([sample[1]]),
+    });
+    const summary = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(summary.anomalies_created, 1);
+    assert.equal(summary.failed_items, 0);
+  });
+
+  assert.equal(providerCalls, 0);
+  assert.equal(alertService.records.length, 1);
+  assert.equal(alertService.records[0].message_source, "fallback");
+  assert.match(alertService.records[0].message, /AppointmentAPI/);
+});
+
+test("Helmet headers permit the built client assets from the Express server", async () => {
+  await withServer({}, async (base) => {
+    const page = await fetch(`${base}/`);
+    const html = await page.text();
+    assert.equal(page.status, 200);
+    assert.match(page.headers.get("content-security-policy"), /script-src 'self'/);
+    assert.match(page.headers.get("content-security-policy"), /connect-src 'self'/);
+    assert.equal(page.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(page.headers.get("x-frame-options"), "SAMEORIGIN");
+    const assetPath = html.match(/src="([^"]+\.js)"/)?.[1];
+    assert.ok(assetPath, "production HTML should point to a built JavaScript asset");
+    const asset = await fetch(new URL(assetPath, base));
+    assert.equal(asset.status, 200);
+    assert.match(asset.headers.get("content-type"), /javascript/);
+    assert.ok(asset.headers.has("content-security-policy"));
   });
 });
 

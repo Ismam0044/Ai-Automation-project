@@ -1,6 +1,7 @@
 ﻿import { GoogleGenAI } from "@google/genai";
 import { logger } from "../config/logger.js";
 import { findActiveAlertForDetection } from "./alertService.js";
+import { reserveGeminiCall } from "./geminiUsageService.js";
 
 export const MAX_ALERT_MESSAGE_LENGTH = 280;
 const DEFAULT_TIMEOUT_MS = 10000;
@@ -188,6 +189,8 @@ export function createLlmService({
   model = process.env.GEMINI_MODEL,
   timeoutMs = readTimeoutMs(),
   findActiveAlert = findActiveAlertForDetection,
+  usageService = { reserveGeminiCall },
+  dailyCallLimit = Number(process.env.GEMINI_DAILY_CALL_LIMIT ?? 100),
   logger: serviceLogger = logger,
 } = {}) {
   const effectiveTimeoutMs = readTimeoutMs(timeoutMs);
@@ -228,6 +231,33 @@ export function createLlmService({
     const contents = buildAlertPrompt(facts);
     let lastFailureReason;
     for (let attempt = 0; attempt < 2; attempt += 1) {
+      let reservation;
+      try {
+        reservation = await usageService.reserveGeminiCall(dailyCallLimit);
+      } catch {
+        const failureReason = {
+          httpStatus: null,
+          reasonCode: "DAILY_USAGE_COUNTER_UNAVAILABLE",
+          message: "Could not check the Gemini daily call counter.",
+        };
+        serviceLogger.warn({ stage: "daily_gemini_usage" }, "Gemini daily call counter is unavailable; using fallback");
+        return { ...complete(buildFallbackMessage(facts), "fallback"), failureReason };
+      }
+      if (!reservation?.allowed) {
+        const failureReason = {
+          httpStatus: null,
+          reasonCode: "GEMINI_DAILY_CALL_LIMIT_REACHED",
+          message: "The configured daily Gemini call limit has been reached.",
+        };
+        if (reservation?.logRequired) {
+          serviceLogger.warn(
+            { day: reservation.day, dailyCallLimit },
+            "Daily Gemini call limit reached; using fallback messages until the next UTC day",
+          );
+        }
+        return { ...complete(buildFallbackMessage(facts), "fallback"), failureReason };
+      }
+
       let response;
       try {
         response = await gemini.models.generateContent({

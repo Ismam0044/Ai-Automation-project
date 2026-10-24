@@ -161,6 +161,55 @@ test("active alert listing filters status and sorts newest first", async () => {
   assert.deepEqual(sort, { createdAt: -1 });
 });
 
+test("filtered alert listing applies severity ordering and database pagination", async () => {
+  const findCalls = [];
+  const countCalls = [];
+  const fakeAlert = {
+    find: (filter) => {
+      const query = { filter };
+      findCalls.push(query);
+      return {
+        sort(sortSpec) {
+          query.sort = sortSpec;
+          return this;
+        },
+        skip(offset) {
+          query.offset = offset;
+          return this;
+        },
+        limit(pageSize) {
+          query.pageSize = pageSize;
+          return Promise.resolve([{ _id: "page-result" }]);
+        },
+      };
+    },
+    countDocuments: async (filter) => {
+      countCalls.push(filter);
+      return countCalls.length === 1 ? 1 : 4;
+    },
+  };
+  const service = createAlertService({ AlertModel: fakeAlert });
+
+  const result = await service.listAlerts({ status: "active", page: 2, limit: 3, apiName: "Appointment", severity: "critical" });
+
+  assert.deepEqual(findCalls[0].filter, {
+    status: "active",
+    api_name: /Appointment/i,
+    severity: "critical",
+  });
+  assert.deepEqual(findCalls[0].sort, { severity: 1, updatedAt: -1 });
+  assert.equal(findCalls[0].offset, 3);
+  assert.equal(findCalls[0].pageSize, 3);
+  assert.equal(result.alerts[0]._id, "page-result");
+  assert.deepEqual(result.pagination, { page: 2, limit: 3, total: 1, total_pages: 1 });
+  assert.deepEqual(countCalls, [
+    { status: "active", api_name: /Appointment/i, severity: "critical" },
+    { status: "active", api_name: /Appointment/i },
+    { status: "active", api_name: /Appointment/i, severity: "critical" },
+    { status: "active", api_name: /Appointment/i, severity: "warning" },
+  ]);
+});
+
 test("resolving by id changes only an active alert to resolved", async () => {
   let call;
   const expected = { _id: "alert-id", status: "resolved" };

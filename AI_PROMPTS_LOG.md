@@ -481,3 +481,48 @@ This file records the user's project instructions and prompts as requested. It w
 > Do nothing else.
 
 **Result:** Removed the requested README content, replaced the logged Atlas identifiers with placeholders, and published the documentation-only commit to the configured `master` branch.
+
+## 2026-10-24 - Phase on v2: landing hero and visual design
+
+> Phase on branch v2. The assessment version on master and tag v1.0 must never be changed. Do not touch .env, do not print secrets, do not run git commit or git push. No backend changes in this phase.
+>
+> Goal: a professional landing hero and a consistent visual design for the existing React and Vite client, using Tailwind CSS and GSAP.
+>
+> 1. Setup: add Tailwind CSS using the current official Tailwind installation guide for Vite, and GSAP using the current official GSAP documentation for React (including the useGSAP hook if the docs recommend it). Check the documentation and do not guess the setup. Tell me the exact packages and versions you install and why.
+> 2. Hero section at the top of the page: a clear headline and one supporting sentence about monitoring APIs and getting readable AI written alerts, a primary button "Try it now" that smooth scrolls to the Submit checks panel, a secondary button "Load sample" that fills the panel with the example from ASSESSMENT.md, and a visual made of two or three mock alert cards (clearly synthetic: AppointmentAPI critical, BillingAPI warning, PatientDataAPI healthy).
+> 3. Below the hero: a short strip of three points (detects problems, AI written alerts, works with a JSON file or POST /monitor) and the existing "How it works" box.
+> 4. GSAP animation: a staggered entrance for the headline, text and buttons, gentle floating motion for the mock cards, and a soft pulse on the critical badge. Create animations inside the proper React lifecycle with cleanup, never leave timers or listeners behind. Respect prefers-reduced-motion by disabling the motion. Keep it light: no heavy plugins, no large images, no video.
+> 5. Restyle the existing dashboard, summary bar, alert cards, tabs and forms with Tailwind utility classes so the whole page looks consistent and professional. Keep severity colors readable (critical red, warning amber, healthy green), make it responsive from phone to desktop, keep sufficient contrast, visible focus states, and proper labels on buttons and inputs. Remove old CSS that Tailwind makes unnecessary.
+> 6. Do not change behavior: polling, resolve, filters, error and empty states must work as before. Render server text only as normal React text and never use dangerouslySetInnerHTML.
+> 7. Run the client build and show the real output, including the bundle sizes. Run the full test suite and show the real output. Tell me how to view the page and what I should see. Do not claim the UI works unless something proves it.
+> 8. Update the README with the new dependencies.
+> 9. Log this prompt in AI_PROMPTS_LOG.md.
+>
+> Do not start any other phase. Explain the file structure and the animation approach in simple words and wait for my approval.
+
+**Result:** Created the local `v2` branch, installed Tailwind/Vite and GSAP/React integration, and implemented the landing page and monitoring panel using Tailwind and lifecycle-cleaned, reduced-motion-aware GSAP animations.
+
+## 2026-10-24 - Phase on v2: public-use safety, alert history filters, and abuse controls
+
+> Phase on branch v2. The assessment version on master and tag v1.0 must never be changed. Do not touch .env, do not print secrets, do not run git commit or git push.
+>
+> Goal: make the app safe and complete enough for anyone to use without signup or login, within the requirements of ASSESSMENT.md. Keep POST /monitor, GET /alerts and the input format exactly as in ASSESSMENT.md. The Submit checks panel and the How it works section already exist, so do not rebuild them.
+>
+> 1. Backend, alerts API: add GET /alerts?status=active|resolved (default active, keeping today's response shape for the default call), plus limit and page parameters with a maximum page size. Return 400 with the usual JSON error for invalid values. Resolved alerts are returned newest first by update time.
+> 2. Frontend, alerts view: add tabs for Active and Resolved, a search box for the API name, and a severity filter (all, critical, warning). Keep the summary bar, auto refresh, resolve button, and the loading, empty and error states. Add simple previous and next page controls when there are more results than one page. Style everything with the existing Tailwind setup and keep it responsive and accessible (labels, focus states, keyboard use).
+> 3. Frontend, demo notice: make sure a visible notice near the Submit checks panel says: "Demo. Do not enter real patient or company data. Alerts are shared by everyone using this app." Add it if it is missing.
+> 4. Abuse protection without accounts, all configurable with safe defaults and listed as placeholders in .env.example:
+>    a. helmet security headers. Configure the content security policy so the built client in client/dist still works, and tell me which directives you chose and why.
+>    b. Per IP rate limiting on POST /monitor, with a stricter limit than on the read and resolve endpoints. Return HTTP 429 with the usual JSON error shape.
+>    c. A daily cap on Gemini calls, counted per day in a single counter. When the cap is reached, use the fallback message, log it once per day, and never block saving the alert.
+>    d. A setting for trusting a reverse proxy, off by default, so rate limiting sees the real client address when deployed behind a host's proxy.
+>    e. Keep the existing batch size, body size and concurrency limits.
+> 5. Do not add login, accounts, URL monitoring, or any call to user supplied URLs. The app only processes data that users submit.
+> 6. Render all server text as normal React text. Never use dangerouslySetInnerHTML.
+> 7. Tests with mocks: the status filter and pagination, invalid query values returning 400, the 429 response from the rate limit, the daily cap falling back to the template message and not blocking saves, and that security headers are present. Run the full suite and show the real output. Run the client build and show the result. Also confirm that the built client still loads from the Express server with the new headers, and tell me how you checked.
+> 8. Update the README with the new query parameters and settings.
+> 9. Log this prompt in AI_PROMPTS_LOG.md.
+>
+> Do not start any other phase. Explain what you built in simple words and wait for my approval.
+
+**Result:** Added active/resolved alert filtering and pagination, frontend search and severity controls, Helmet CSP headers, per-IP rate limits, and a MongoDB-backed daily Gemini call cap that falls back without blocking alert persistence. Added mock-backed tests and documented the settings and API behavior.

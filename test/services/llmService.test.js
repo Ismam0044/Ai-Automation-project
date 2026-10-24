@@ -51,6 +51,7 @@ function makeService({
     model: "mock-model",
     timeoutMs: 80,
     findActiveAlert,
+    usageService: { async reserveGeminiCall() { return { allowed: true, day: "2026-10-24" }; } },
     logger,
   });
   return { service, logger, getCalls: () => calls };

@@ -90,6 +90,43 @@ export function createAlertService({ AlertModel = Alert } = {}) {
     return AlertModel.find({ status: "active" }).sort({ createdAt: -1 });
   }
 
+  async function listAlerts({ status = "active", page = 1, limit = 20, apiName = "", severity = "all" } = {}) {
+    const summaryFilter = { status };
+    if (apiName) {
+      const escaped = apiName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      summaryFilter.api_name = new RegExp(escaped, "i");
+    }
+    const resultFilter = { ...summaryFilter };
+    if (severity !== "all") resultFilter.severity = severity;
+    const sort = status === "resolved"
+      ? { updatedAt: -1 }
+      : { severity: 1, updatedAt: -1 };
+    const offset = (page - 1) * limit;
+
+    const [alerts, total, summaryTotal, criticalCount, warningCount] = await Promise.all([
+      AlertModel.find(resultFilter).sort(sort).skip(offset).limit(limit),
+      AlertModel.countDocuments(resultFilter),
+      AlertModel.countDocuments(summaryFilter),
+      AlertModel.countDocuments({ ...summaryFilter, severity: "critical" }),
+      AlertModel.countDocuments({ ...summaryFilter, severity: "warning" }),
+    ]);
+
+    return {
+      alerts,
+      pagination: {
+        page,
+        limit,
+        total,
+        total_pages: Math.ceil(total / limit),
+      },
+      summary: {
+        total: summaryTotal,
+        critical: criticalCount,
+        warning: warningCount,
+      },
+    };
+  }
+
   async function findActiveAlertForDetection(detectionResult) {
     if (!detectionResult || !Array.isArray(detectionResult.anomaly_types)
         || detectionResult.anomaly_types.length === 0) {
@@ -111,12 +148,13 @@ export function createAlertService({ AlertModel = Alert } = {}) {
     );
   }
 
-  return { saveAlert, listActiveAlerts, findActiveAlertForDetection, resolveAlertById };
+  return { saveAlert, listActiveAlerts, listAlerts, findActiveAlertForDetection, resolveAlertById };
 }
 
 const defaultService = createAlertService();
 
 export const saveAlert = defaultService.saveAlert;
 export const listActiveAlerts = defaultService.listActiveAlerts;
+export const listAlerts = defaultService.listAlerts;
 export const findActiveAlertForDetection = defaultService.findActiveAlertForDetection;
 export const resolveAlertById = defaultService.resolveAlertById;
