@@ -68,15 +68,15 @@ export default function MonitorPanel({ value, onChange, onLoadSample, onComplete
   }
 
   return (
-    <section id="submit-checks" className="scroll-mt-6 rounded-[1.75rem] border border-[#293a45] bg-[#101820] p-5 shadow-[0_20px_55px_-42px_rgba(0,0,0,0.9)] sm:p-8 lg:p-9">
+    <section id="submit-checks" className="scroll-mt-6 rounded-xl border border-slate-200 bg-white p-5 sm:p-7 lg:p-8">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-[#61d6cd]">Try a monitoring batch</p>
-          <h2 className="text-2xl font-bold tracking-tight text-[#edf5f8]">Submit checks</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#9badb8]">Send a JSON array of API response checks. Healthy checks are skipped; detected anomalies appear in Active alerts.</p>
+          <p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-[#2563eb]">Try a monitoring batch</p>
+          <h2 className="text-2xl font-bold tracking-tight text-[#172b4d]">Submit checks</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#667085]">Send a JSON array of API response checks. Healthy checks are skipped; detected anomalies appear in Active alerts.</p>
         </div>
         <button
-          className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg border border-[#3a4d58] bg-[#101820] px-4 text-sm font-semibold text-[#b7c8d1] transition hover:border-[#52636d] hover:bg-[#0b131a] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5eead4]"
+          className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg border border-[#d0d5dd] bg-[#ffffff] px-4 text-sm font-semibold text-[#475467] transition hover:border-[#98a2b3] hover:bg-[#f9fafb] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563eb]"
           type="button"
           onClick={onLoadSample}
         >
@@ -85,11 +85,11 @@ export default function MonitorPanel({ value, onChange, onLoadSample, onComplete
       </div>
 
       <form className="mt-6" onSubmit={submitChecks}>
-        <label htmlFor="checks-json" className="mb-2 block text-sm font-semibold text-[#d2e0e6]">Checks as JSON array</label>
+        <label htmlFor="checks-json" className="mb-2 block text-sm font-semibold text-[#344054]">Checks as JSON array</label>
         <textarea
           id="checks-json"
           name="checks-json"
-          className="min-h-64 w-full resize-y rounded-xl border border-[#3a4d58] bg-[#0b131a] px-4 py-3 font-mono text-xs leading-6 text-[#d2e0e6] outline-none transition placeholder:text-[#6d808c] focus:border-[#5eead4] focus:ring-4 focus:ring-[#5eead4]/15 sm:text-sm"
+          className="min-h-64 w-full resize-y rounded-xl border border-[#d0d5dd] bg-[#f9fafb] px-4 py-3 font-mono text-xs leading-6 text-[#344054] outline-none transition placeholder:text-[#98a2b3] focus:border-[#2563eb] focus:ring-4 focus:ring-[#2563eb]/15 sm:text-sm"
           spellCheck="false"
           autoCapitalize="off"
           autoComplete="off"
@@ -98,9 +98,9 @@ export default function MonitorPanel({ value, onChange, onLoadSample, onComplete
           aria-describedby="checks-help"
         />
         <div className="mt-2 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <p id="checks-help" className="mb-0 text-xs leading-5 text-[#81939e]">Use api_name, response_time_ms, status_code, and records_returned for each check.</p>
+          <p id="checks-help" className="mb-0 text-xs leading-5 text-[#667085]">Use api_name, response_time_ms, status_code, and records_returned for each check.</p>
           <button
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#5eead4] px-5 text-sm font-bold text-[#07110f] transition hover:bg-[#91f2e2] focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-[#5eead4] disabled:cursor-wait disabled:opacity-60"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#2563eb] px-5 text-sm font-bold text-[#ffffff] transition hover:bg-[#1d4ed8] focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-[#2563eb] disabled:cursor-wait disabled:opacity-60"
             type="submit"
             disabled={submitting}
           >
@@ -110,9 +110,9 @@ export default function MonitorPanel({ value, onChange, onLoadSample, onComplete
         </div>
       </form>
 
-      {error && <p className="mt-4 rounded-lg border border-red-900/70 bg-red-950/35 px-4 py-3 text-sm text-red-200" role="alert">{error}</p>}
+      {error && <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">{error}</p>}
       {result && (
-        <div className="mt-5 rounded-xl border border-emerald-800/70 bg-emerald-950/30/70 p-4 text-sm text-emerald-100" role="status" aria-live="polite">
+        <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 text-sm text-emerald-800" role="status" aria-live="polite">
           <p className="font-bold">Batch processed</p>
           <p className="mt-1 mb-0 leading-6">
             {result.total_items} checks · {result.healthy_count} healthy · {result.anomalies_created} alerts created · {result.anomalies_updated} updated · {result.failed_items} failed

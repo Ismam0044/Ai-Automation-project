@@ -7,9 +7,9 @@ export function ConfirmDeleteDialog({ name, onConfirm, disabled, children }) {
       <AlertDialog.Trigger asChild>{children}</AlertDialog.Trigger>
       <AlertDialog.Portal>
         <AlertDialog.Overlay className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm " />
-        <AlertDialog.Content className="fixed left-1/2 top-1/2 z-50 w-[min(92vw,28rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[#2a3d49] bg-[#111a23] p-6 shadow-2xl focus:outline-none">
-          <AlertDialog.Title className="text-lg font-bold text-[#edf5f8]">Delete {name}?</AlertDialog.Title>
-          <AlertDialog.Description className="mt-2 text-sm leading-6 text-[#a5b6c0]">
+        <AlertDialog.Content className="fixed left-1/2 top-1/2 z-50 w-[min(92vw,28rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[#e4e7ec] bg-[#111a23] p-6 shadow-2xl focus:outline-none">
+          <AlertDialog.Title className="text-lg font-bold text-[#172b4d]">Delete {name}?</AlertDialog.Title>
+          <AlertDialog.Description className="mt-2 text-sm leading-6 text-[#667085]">
             Its check history and alerts will also be removed. This action cannot be undone.
           </AlertDialog.Description>
           <div className="mt-6 flex justify-end gap-2">
