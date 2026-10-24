@@ -16,6 +16,9 @@ const clientDistDirectory = fileURLToPath(new URL("../client/dist/", import.meta
 export function createApp({
   alertService,
   llmService,
+  workspaceService,
+  monitorRepository,
+  publicUrlValidator,
   monitorSettings = {},
   appLogger = logger,
   logRequests = true,
@@ -73,6 +76,7 @@ export function createApp({
   }));
   app.post("/monitor", limits.monitor);
   app.use("/alerts", limits.api);
+  app.use("/workspaces", limits.api);
   app.use(express.json({ limit: settings.bodyLimit }));
   if (existsSync(path.join(clientDistDirectory, "index.html"))) {
     app.use(express.static(clientDistDirectory));
@@ -81,6 +85,9 @@ export function createApp({
   for (const router of createApiRoutes({
     alertService,
     llmService,
+    workspaceService,
+    monitorRepository,
+    publicUrlValidator,
     settings,
     logger: appLogger,
   })) {

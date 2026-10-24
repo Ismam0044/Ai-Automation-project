@@ -154,6 +154,44 @@ curl.exe -X POST "http://127.0.0.1:3000/monitor" -H "Content-Type: application/j
 
 All endpoints use JSON except `GET /health`. The server returns errors in this form: `{"error":{"code":"...","message":"..."}}`.
 
+### Private workspaces and monitor definitions
+
+Workspaces do not use accounts or passwords. Create one with `POST /workspaces`; the response contains a random bearer key shown only at creation time. Save it somewhere private. The database stores only a SHA-256 hash of the key, so it cannot be retrieved later. Workspace creation and monitor routes use the configured `/workspaces` API rate limit.
+
+```sh
+curl -X POST http://127.0.0.1:3000/workspaces \
+  -H 'Content-Type: application/json' \
+  --data '{"name":"My workspace"}'
+```
+
+```json
+{
+  "workspace": { "id": "<workspace-id>", "name": "My workspace" },
+  "access_key": "<shown-once-workspace-key>"
+}
+```
+
+All monitor operations require `Authorization: Bearer <workspace-key>` and are scoped to the workspace in the URL. A monitor currently stores only `name` and `url`; the app does not poll or fetch the URL and this API does not create alerts. The existing assessment endpoints (`POST /monitor` and `GET /alerts`) retain their current shared behavior and are not tied to these workspace definitions.
+
+| Method and path | Purpose | Request body |
+| --- | --- | --- |
+| `POST /workspaces/:workspaceId/monitors` | Create a monitor | `{"name":"Public API","url":"https://api.example.org/health"}` |
+| `GET /workspaces/:workspaceId/monitors` | List this workspace's monitors | none |
+| `GET /workspaces/:workspaceId/monitors/:monitorId` | Read one monitor | none |
+| `PATCH /workspaces/:workspaceId/monitors/:monitorId` | Update either or both fields | `{"name":"Renamed API"}` |
+| `DELETE /workspaces/:workspaceId/monitors/:monitorId` | Delete a monitor | none |
+
+Example create request (replace both placeholders with values returned or saved from workspace creation):
+
+```sh
+curl -X POST http://127.0.0.1:3000/workspaces/<workspace-id>/monitors \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <workspace-key>' \
+  --data '{"name":"Public API","url":"https://api.example.org/health"}'
+```
+
+The monitor URL guard allows only HTTP or HTTPS on standard ports, rejects credentials and local hostnames, and resolves the host before saving. Every returned IP address must be public; loopback, private, link-local, reserved, and documentation ranges are rejected. This validation does not make an HTTP request to the supplied URL. If a future scheduler fetches monitors, it must repeat these checks immediately before connecting and pin the checked DNS result to prevent DNS rebinding.
+
 ### `POST /monitor`
 
 Submit an array of checks. Healthy items are reported but do not create alerts. Each anomalous item creates or updates an active alert. A malformed item becomes a validation anomaly and does not stop other items. Request body size and batch size are configurable; the default maximum batch is 100 items.

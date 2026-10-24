@@ -397,6 +397,106 @@ test("PATCH resolve succeeds, unknown id is 404, and malformed id is 400", async
   });
 });
 
+test("workspace provisioning returns a bearer key once and validates the workspace name", async () => {
+  const workspaceId = "a".repeat(24);
+  const accessKey = "k".repeat(43);
+  const workspaceService = {
+    async createWorkspace(name) { return { workspace: { _id: workspaceId, name }, accessKey }; },
+    async authenticateWorkspace(id, key) { return id === workspaceId && key === accessKey ? { _id: id } : null; },
+  };
+
+  await withServer({ workspaceService }, async (base) => {
+    const invalid = await fetch(`${base}/workspaces`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "  " }),
+    });
+    assert.equal(invalid.status, 400);
+    assert.equal((await invalid.json()).error.code, "INVALID_WORKSPACE");
+
+    const created = await fetch(`${base}/workspaces`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Private team" }),
+    });
+    assert.equal(created.status, 201);
+    assert.deepEqual(await created.json(), {
+      workspace: { id: workspaceId, name: "Private team" },
+      access_key: accessKey,
+    });
+  });
+});
+
+test("workspace monitor CRUD requires its bearer key and scopes every operation", async () => {
+  const workspaceId = "a".repeat(24);
+  const otherWorkspaceId = "c".repeat(24);
+  const monitorId = "b".repeat(24);
+  const accessKey = "k".repeat(43);
+  const records = [];
+  const workspaceService = {
+    async createWorkspace() { throw new Error("not used"); },
+    async authenticateWorkspace(id, key) { return id === workspaceId && key === accessKey ? { _id: id } : null; },
+  };
+  const monitorRepository = {
+    async create(ownerId, data) {
+      const record = { _id: monitorId, workspace_id: ownerId, ...data, createdAt: new Date(), updatedAt: new Date() };
+      records.push(record);
+      return record;
+    },
+    async list(ownerId) { return records.filter((record) => record.workspace_id === ownerId); },
+    async findById(ownerId, id) { return records.find((record) => record.workspace_id === ownerId && record._id === id) ?? null; },
+    async update(ownerId, id, data) {
+      const record = records.find((item) => item.workspace_id === ownerId && item._id === id);
+      if (!record) return null;
+      Object.assign(record, data, { updatedAt: new Date() });
+      return record;
+    },
+    async remove(ownerId, id) {
+      const index = records.findIndex((item) => item.workspace_id === ownerId && item._id === id);
+      return index < 0 ? null : records.splice(index, 1)[0];
+    },
+  };
+  const publicUrlValidator = async (url) => {
+    if (url.includes("private.test")) throw new TypeError("URL host must resolve only to public IP addresses.");
+    return new URL(url).toString();
+  };
+  const path = `/workspaces/${workspaceId}/monitors`;
+  const headers = { authorization: `Bearer ${accessKey}`, "content-type": "application/json" };
+
+  await withServer({ workspaceService, monitorRepository, publicUrlValidator }, async (base) => {
+    const unauthorized = await fetch(`${base}${path}`);
+    assert.equal(unauthorized.status, 401);
+
+    const created = await fetch(`${base}${path}`, {
+      method: "POST", headers, body: JSON.stringify({ name: "Public API", url: "https://api.example.org/health" }),
+    });
+    assert.equal(created.status, 201);
+    const monitor = (await created.json()).monitor;
+    assert.equal(monitor.workspace_id, workspaceId);
+
+    const listed = await fetch(`${base}${path}`, { headers });
+    assert.equal((await listed.json()).monitors.length, 1);
+
+    const fetched = await fetch(`${base}${path}/${monitorId}`, { headers });
+    assert.equal((await fetched.json()).monitor.name, "Public API");
+
+    const updated = await fetch(`${base}${path}/${monitorId}`, {
+      method: "PATCH", headers, body: JSON.stringify({ name: "Updated API" }),
+    });
+    assert.equal((await updated.json()).monitor.name, "Updated API");
+
+    const blockedUrl = await fetch(`${base}${path}/${monitorId}`, {
+      method: "PATCH", headers, body: JSON.stringify({ url: "http://private.test/" }),
+    });
+    assert.equal(blockedUrl.status, 400);
+    assert.equal((await blockedUrl.json()).error.code, "INVALID_MONITOR");
+
+    const otherWorkspace = await fetch(`${base}/workspaces/${otherWorkspaceId}/monitors/${monitorId}`, { headers });
+    assert.equal(otherWorkspace.status, 401);
+
+    const deleted = await fetch(`${base}${path}/${monitorId}`, { method: "DELETE", headers });
+    assert.deepEqual(await deleted.json(), { deleted: true, monitor_id: monitorId });
+    const missing = await fetch(`${base}${path}/${monitorId}`, { headers });
+    assert.equal(missing.status, 404);
+  });
+});
+
 test("POST /monitor enforces the configured maximum batch size", async () => {
   await withServer({ monitorSettings: { maxBatchSize: 1 } }, async (base) => {
     const response = await fetch(`${base}/monitor`, {
