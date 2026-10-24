@@ -3,7 +3,6 @@ import { assertProductionRequirements } from "./productionConfig.js";
 
 const port = Number(process.env.PORT ?? 3000);
 const nodeEnv = process.env.NODE_ENV ?? "development";
-const isVercel = process.env.VERCEL === "1";
 
 function positiveIntegerFromEnv(name, defaultValue) {
   const value = Number(process.env[name] ?? defaultValue);
@@ -37,10 +36,9 @@ assertProductionRequirements({
   mongoUri: process.env.MONGODB_URI,
   geminiApiKey: process.env.GEMINI_API_KEY,
   geminiModel: process.env.GEMINI_MODEL,
-  publicAppUrl: process.env.PUBLIC_APP_URL ?? (isVercel && process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined),
 });
 
-const publicAppUrl = process.env.PUBLIC_APP_URL ?? (isVercel && process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+const publicAppUrl = process.env.PUBLIC_APP_URL ?? "http://localhost:3000";
 let parsedPublicAppUrl;
 try {
   parsedPublicAppUrl = new URL(publicAppUrl);
@@ -55,7 +53,6 @@ if (!["http:", "https:"].includes(parsedPublicAppUrl.protocol)
 
 export const env = Object.freeze({
   nodeEnv,
-  isVercel,
   port,
   mongoUri: process.env.MONGODB_URI,
   logLevel: process.env.LOG_LEVEL ?? "info",
@@ -70,9 +67,7 @@ export const env = Object.freeze({
   apiRateLimitMax: positiveIntegerFromEnv("API_RATE_LIMIT_MAX", 120),
   geminiDailyCallLimit: positiveIntegerFromEnv("GEMINI_DAILY_CALL_LIMIT", 25),
   geminiTimeoutMs: positiveIntegerFromEnv("GEMINI_TIMEOUT_MS", 10000),
-  trustProxy: trustProxyFromEnv(isVercel ? (process.env.TRUST_PROXY ?? "1") : process.env.TRUST_PROXY),
-  cronSecret: process.env.CRON_SECRET,
-  cronRunDueBudgetMs: positiveIntegerFromEnv("CRON_RUN_DUE_BUDGET_MS", 45000),
+  trustProxy: trustProxyFromEnv(process.env.TRUST_PROXY),
   workspaceCreateRateLimitWindowMs: positiveIntegerFromEnv("WORKSPACE_CREATE_RATE_LIMIT_WINDOW_MS", 3600000),
   workspaceCreateRateLimitMax: positiveIntegerFromEnv("WORKSPACE_CREATE_RATE_LIMIT_MAX", 5),
   monitorCreateRateLimitWindowMs: positiveIntegerFromEnv("MONITOR_CREATE_RATE_LIMIT_WINDOW_MS", 900000),
@@ -99,5 +94,3 @@ export const env = Object.freeze({
   publicAppUrl: parsedPublicAppUrl.origin,
 });
 
-if (isVercel && env.cronRunDueBudgetMs >= 60000) throw new Error("CRON_RUN_DUE_BUDGET_MS must be less than 60000 on Vercel");
-if (isVercel && env.trustProxy !== 1) throw new Error("TRUST_PROXY must be 1 on Vercel");

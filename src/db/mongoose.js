@@ -2,13 +2,11 @@ import mongoose from "mongoose";
 import { logger } from "../config/logger.js";
 import { parseMongoUri } from "../config/mongoUri.js";
 
-if (process.env.VERCEL) mongoose.set("autoIndex", false);
-
 const CONNECTION_CACHE = Symbol.for("api-monitor.connection-cache");
 const connectionCache = globalThis[CONNECTION_CACHE] ??= new WeakMap();
 const clientsWithListeners = globalThis[Symbol.for("api-monitor.connection-listeners")] ??= new WeakSet();
 
-export async function connectToDatabase(uri, { mongooseClient = mongoose, appLogger = logger, serverless = false } = {}) {
+export async function connectToDatabase(uri, { mongooseClient = mongoose, appLogger = logger } = {}) {
   const parsedUri = parseMongoUri(uri);
   if (mongooseClient.connection.readyState === 1) return mongooseClient.connection;
   const cached = connectionCache.get(mongooseClient);
@@ -30,9 +28,9 @@ export async function connectToDatabase(uri, { mongooseClient = mongoose, appLog
       }
       await mongooseClient.connect(parsedUri.uri, {
         serverSelectionTimeoutMS: 5000,
-        maxPoolSize: serverless ? 5 : 10,
+        maxPoolSize: 10,
         minPoolSize: 0,
-        maxConnecting: serverless ? 2 : 5,
+        maxConnecting: 5,
       });
     } catch (error) {
       const safeError = new Error("MongoDB connection failed. Verify MONGODB_URI and network access.");

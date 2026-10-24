@@ -17,27 +17,23 @@ import { generateAlertMessage } from "./services/llmService.js";
 
 try {
   await connectToDatabase(env.mongoUri);
-  if (!env.isVercel) {
-    await Alert.init();
-    await GeminiDailyUsage.init();
-    await Workspace.init();
-    await Monitor.init();
-    await MonitorCheck.init();
-    await MonitorCapacity.init();
-    await WorkspaceAccessLink.init();
-  }
+  await Alert.init();
+  await GeminiDailyUsage.init();
+  await Workspace.init();
+  await Monitor.init();
+  await MonitorCheck.init();
+  await MonitorCapacity.init();
+  await WorkspaceAccessLink.init();
   const workspacePurgeService = createWorkspacePurgeService();
   let purgeTimer;
-  if (!env.isVercel) {
-    await workspacePurgeService.purgeInactiveWorkspaces(env.workspaceInactivePurgeDays);
-    purgeTimer = setInterval(() => {
-      workspacePurgeService.purgeInactiveWorkspaces(env.workspaceInactivePurgeDays)
-        .catch((error) => logger.error({ err: error }, "Inactive workspace purge failed"));
-    }, 24 * 60 * 60 * 1000);
-    purgeTimer.unref();
-  }
+  await workspacePurgeService.purgeInactiveWorkspaces(env.workspaceInactivePurgeDays);
+  purgeTimer = setInterval(() => {
+    workspacePurgeService.purgeInactiveWorkspaces(env.workspaceInactivePurgeDays)
+      .catch((error) => logger.error({ err: error }, "Inactive workspace purge failed"));
+  }, 24 * 60 * 60 * 1000);
+  purgeTimer.unref();
   let scheduler;
-  if (env.schedulerEnabled && !env.isVercel) {
+  if (env.schedulerEnabled) {
     const { monitorRepository, monitorCheckService } = createMonitorCheckRuntime({
       settings: env,
       llmService: { generateAlertMessage },

@@ -717,3 +717,20 @@ This file records the user's project instructions and prompts as requested. It w
 > Fix only this. Wait for my approval.
 >
 > **Result:** Root cause was the separate local scheduler setup constructing the check service without `llmService`; the API route setup already supplied it. Both paths now use a shared runtime builder with the real Gemini function as its default, and the local server injects it explicitly. Added a mocked runtime wiring test that imports the Vercel entry without database/network access. Replaced all source `findOneAndUpdate` `{ new: true }` options with `{ returnDocument: "after" }`. Full suite: 121 passed, 0 failed. The test run still reports an existing Mongoose `validateSync()` deprecation warning from a test; this is separate from the requested `new` option.
+
+
+## 2026-10-25 ? Remove hosting deployment support
+
+> Branch v2. Do not read or modify .env, do not change any existing setting (including GEMINI_MODEL and GEMINI_TIMEOUT_MS), do not print secrets, do not commit or push. Do not touch master.
+>
+> Remove the deployment support so the project is local only:
+> 1. Delete the Vercel and Render specific files: vercel.json, api/, docs/vercel.pro.example.json, render.yaml, and the Vercel cron endpoints with their tests.
+> 2. Remove the Deploy to Vercel and Deploy to Render sections and any other deployment mentions from README.md, and deployment-only variables from .env.example.
+> 3. Keep everything the local app needs. If you are not sure whether something is used locally, keep it and tell me.
+> 4. Run npm test and the client build and show the real output. Confirm npm run dev still starts.
+> 5. List every file and section you removed.
+> 6. Log this prompt in AI_PROMPTS_LOG.md.
+>
+> Do only this. Wait for my approval.
+>
+> **Result:** Removed Vercel and Render config, entry points, cron routes/controllers/tests, serverless Mongo-backed rate-limit and scheduler coordination code, and index-sync tooling. Removed the two deployment guides and deployment-only environment placeholders; retained local scheduler, purge, rate limits, database initialization, and application settings. Verification: npm test passed 110/110; client build succeeded. Local MongoDB was not listening on 127.0.0.1:27017, so npm run dev was not launched because doing so would load the prohibited .env or fail on unavailable MongoDB. The dev script remains node-based and its server startup wiring is covered by the suite.

@@ -23,12 +23,6 @@ import { createAlertRoutes } from "./alertRoutes.js";
 import healthRoutes from "./healthRoutes.js";
 import { createMonitorRoutes } from "./monitorRoutes.js";
 import { createWorkspaceRoutes } from "./workspaceRoutes.js";
-import { createCronController } from "../controllers/cronController.js";
-import { createCronRoutes } from "./cronRoutes.js";
-import { createMonitorScheduler } from "../services/monitorScheduler.js";
-import { createWorkspacePurgeService } from "../services/workspacePurgeService.js";
-import { createMongoMonitorCheckBudget } from "../services/mongoMonitorCheckBudget.js";
-import { createMongoSchedulerCursor } from "../services/mongoSchedulerCursor.js";
 
 export function createApiRoutes({
   alertService = { findActiveAlertForDetection, saveAlert, listActiveAlerts, listAlerts, resolveAlertById, resolveMonitorAlerts },
@@ -42,9 +36,6 @@ export function createApiRoutes({
   rateLimits,
   settings,
   logger,
-  cronSecret,
-  cronRunDueBudgetMs,
-  isVercel = false,
 }) {
   const monitorService = createMonitorService({
     concurrency: settings.concurrency,
@@ -67,18 +58,7 @@ export function createApiRoutes({
     alertService,
     llmService,
     logger,
-    ...(isVercel ? { checkBudget: createMongoMonitorCheckBudget({ maxPerMinute: settings.schedulerMaxChecksPerMinute }) } : {}),
   }).monitorCheckService;
-  const effectiveScheduler = isVercel ? createMonitorScheduler({
-    monitorRepository: effectiveMonitorRepository,
-    monitorCheckService: effectiveMonitorCheckService,
-    concurrency: settings.schedulerConcurrency,
-    checkBudget: createMongoMonitorCheckBudget({ maxPerMinute: settings.schedulerMaxChecksPerMinute }),
-    workspaceCursor: createMongoSchedulerCursor(),
-    leaseMs: Math.max(settings.monitorCheckLeaseMs, 30_000 + 2 * settings.geminiTimeoutMs + 10_000),
-    jitterMs: settings.schedulerJitterMs,
-    logger,
-  }) : null;
   const effectiveWorkspaceAccessLinkService = workspaceAccessLinkService ?? createWorkspaceAccessLinkService();
   const effectivePublicUrlValidator = publicUrlValidator ?? createPublicUrlValidator({ allowPrivateTargets: settings.allowPrivateTargets });
   const alertController = createAlertController(alertService, {
@@ -119,12 +99,5 @@ export function createApiRoutes({
       checkNowMonitorLimiter: rateLimits.checkNowMonitor,
     }),
   ];
-  if (isVercel) routes.push(createCronRoutes(createCronController({
-    secret: cronSecret,
-    scheduler: effectiveScheduler,
-    purgeService: createWorkspacePurgeService(),
-    timeBudgetMs: cronRunDueBudgetMs,
-    purgeDays: settings.workspaceInactivePurgeDays,
-  })));
   return routes;
 }

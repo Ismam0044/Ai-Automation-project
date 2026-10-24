@@ -15,7 +15,7 @@ This project accepts batches of API response checks, detects unhealthy results w
 
 ## Prerequisites
 
-- Node.js 24 or newer and npm (`NODE_VERSION` is pinned for Render)
+- Node.js 24 or newer and npm
 - A MongoDB instance running locally, or an Atlas cluster and database user
 - A Gemini API key and model name for production model-written messages; local development can use fallback messages without them
 - Git, if cloning the project
@@ -51,14 +51,11 @@ In Windows PowerShell, use `Copy-Item .env.example .env`.
 | Name | Purpose | Example placeholder |
 | --- | --- | --- |
 | `NODE_ENV` | Runtime mode; development enables readable logs | `development` |
-| `NODE_VERSION` | Node.js version used by Render | `24.21.0` |
-| `PORT` | Express port; Render supplies this automatically (default `10000`) | `3000` for local development |
+| `PORT` | Express port | `3000` |
 | `MONGODB_URI` | MongoDB connection URI | `mongodb://127.0.0.1:27017/api_monitor` or `mongodb+srv://<db_user>:<db_password>@<cluster-host>/api_monitor?retryWrites=true&w=majority` |
 | `GEMINI_API_KEY` | Gemini credential; required for production model-written messages | `<your-gemini-api-key>` |
 | `GEMINI_MODEL` | Gemini model identifier supported by your API key/project | `<your-confirmed-model-name>` |
 | `GEMINI_TIMEOUT_MS` | Timeout per Gemini attempt | `10000` |
-| `CRON_SECRET` | Bearer secret required by scheduled HTTP endpoints | `<set-in-host-dashboard>` |
-| `CRON_RUN_DUE_BUDGET_MS` | Maximum runtime budget for one due-check cron request (Vercel default 45 seconds) | `45000` |
 | `MONITOR_BODY_LIMIT` | Maximum JSON request size accepted by Express | `1mb` |
 | `MONITOR_MAX_BATCH_SIZE` | Maximum check items in one `/monitor` request | `100` |
 | `MONITOR_CONCURRENCY` | Maximum items processed at once | `5` |
@@ -85,74 +82,16 @@ In Windows PowerShell, use `Copy-Item .env.example .env`.
 | `CHECK_HISTORY_MAX_PAGE_SIZE` | Maximum history page size | `50` |
 | `CHECK_NOW_WORKSPACE_WINDOW_MS` / `CHECK_NOW_WORKSPACE_MAX` | Manual check limit per workspace; 30 per hour by default | `3600000` / `30` |
 | `CHECK_NOW_MONITOR_WINDOW_MS` / `CHECK_NOW_MONITOR_MAX` | Manual check limit per monitor; 6 per hour by default | `3600000` / `6` |
-| `SCHEDULER_ENABLED` | Start the in-process scheduler on local/Render; Vercel runs checks through HTTP cron instead | `true` |
+| `SCHEDULER_ENABLED` | Start the in-process scheduler | `true` |
 | `SCHEDULER_TICK_INTERVAL_MS` | Scheduler poll interval | `5000` |
 | `SCHEDULER_CONCURRENCY` | Maximum concurrent scheduled checks per work batch | `5` |
-| `SCHEDULER_MAX_CHECKS_PER_MINUTE` | Shared scheduled/manual cap; MongoDB-backed on Vercel, process-local on local/Render | `60` |
+| `SCHEDULER_MAX_CHECKS_PER_MINUTE` | Per-process cap for scheduled and manual checks | `60` |
 | `SCHEDULER_JITTER_MS` | Random scheduling delay up to this many milliseconds | `5000` |
 | `MONITOR_CHECK_LEASE_MS` | Minimum persisted check lease | `120000` |
 | `AUTO_RESOLVE_CONSECUTIVE_HEALTHY_CHECKS` | Healthy checks before automatic alert resolution | `2` |
 | `LOG_LEVEL` | Pino log level | `info` |
 
 The current values are listed in `.env.example`. Keep the model name as a value you have confirmed for your Gemini setup; the application does not choose one automatically.
-
-## Deploy to Vercel
-
-Vercel serves `client/dist` from its static output and runs the Express app exported by `api/index.js` as one serverless function. `vercel.json` uses `npm ci && npm --prefix client ci && npm run build:client`, publishes `client/dist`, and configures a conservative 60-second function duration. Local development and the existing Render `npm start` path remain unchanged.
-
-### Dashboard setup
-
-1. Import the GitHub repository in Vercel and select the `v2` branch as the **Production Branch**. Vercel Cron Jobs run only against production deployments.
-2. Set the Root Directory to `.` (the repository root). Select Node.js 24 in Project Settings. Keep the Framework Preset as Vite or Other; the checked-in build command and output directory are authoritative.
-3. Set the Build Command to `npm ci && npm --prefix client ci && npm run build:client`, the Output Directory to `client/dist`, and the Install Command to `true` so Vercel does not run an extra install before this build command. The function duration comes from `vercel.json`.
-4. Add these application variables to the Production environment (the names and defaults are also in `.env.example`): `NODE_ENV`, `MONGODB_URI`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_TIMEOUT_MS`, `CRON_SECRET`, `CRON_RUN_DUE_BUDGET_MS`, `MONITOR_BODY_LIMIT`, `MONITOR_MAX_BATCH_SIZE`, `MONITOR_CONCURRENCY`, `MONITOR_RATE_LIMIT_WINDOW_MS`, `MONITOR_RATE_LIMIT_MAX`, `API_RATE_LIMIT_WINDOW_MS`, `API_RATE_LIMIT_MAX`, `ALERTS_DEFAULT_PAGE_SIZE`, `ALERTS_MAX_PAGE_SIZE`, `GEMINI_DAILY_CALL_LIMIT`, `TRUST_PROXY`, `PUBLIC_APP_URL`, `WORKSPACE_CREATE_RATE_LIMIT_WINDOW_MS`, `WORKSPACE_CREATE_RATE_LIMIT_MAX`, `MONITOR_CREATE_RATE_LIMIT_WINDOW_MS`, `MONITOR_CREATE_RATE_LIMIT_MAX`, `MONITORS_PER_WORKSPACE_MAX`, `MONITORS_TOTAL_MAX`, `WORKSPACE_INACTIVE_PURGE_DAYS`, `WORKSPACE_ACCESS_LINK_TTL_MINUTES`, `ALLOW_PRIVATE_TARGETS`, `MONITOR_RESPONSE_MAX_BYTES`, `CHECK_HISTORY_RETENTION_DAYS`, `CHECK_HISTORY_MAX_PAGE_SIZE`, `CHECK_NOW_WORKSPACE_WINDOW_MS`, `CHECK_NOW_WORKSPACE_MAX`, `CHECK_NOW_MONITOR_WINDOW_MS`, `CHECK_NOW_MONITOR_MAX`, `SCHEDULER_ENABLED`, `SCHEDULER_TICK_INTERVAL_MS`, `SCHEDULER_CONCURRENCY`, `SCHEDULER_MAX_CHECKS_PER_MINUTE`, `SCHEDULER_JITTER_MS`, `AUTO_RESOLVE_CONSECUTIVE_HEALTHY_CHECKS`, `LOG_LEVEL`, and `MONITOR_CHECK_LEASE_MS`. `NODE_VERSION` and `PORT` in `.env.example` are local/Render settings; choose Node.js 24.x in Vercel's project settings, and Vercel manages the function port. Vercel automatically supplies `VERCEL` and `VERCEL_URL`; do not set those. Put credentials only in Vercel's encrypted dashboard fields. The angle-bracket values below are placeholders, not usable credentials.
-
-Vercel supplies `VERCEL=1` and `VERCEL_URL` automatically; do not set either manually. `TRUST_PROXY` must be `1` on Vercel. The project rejects a different value, disables `ALLOW_PRIVATE_TARGETS` in production, requires HTTPS for `PUBLIC_APP_URL`, and rejects a cron budget of 60000 ms or more. `GEMINI_TIMEOUT_MS` remains `10000`; the HTTP request deadline is separate from this model-call timeout.
-
-| Variable | Vercel value |
-| --- | --- |
-| `NODE_ENV` | `production` |
-| `MONGODB_URI` | `<mongodb-atlas-uri-with-database-name>` |
-| `GEMINI_API_KEY` | `<gemini-api-key>` |
-| `GEMINI_MODEL` | `<model-enabled-for-this-key>` |
-| `GEMINI_TIMEOUT_MS` | `10000` |
-| `PUBLIC_APP_URL` | `<https://your-production-domain>` (set after the first deployment, then redeploy) |
-| `CRON_SECRET` | `<long-random-secret>` |
-| `CRON_RUN_DUE_BUDGET_MS` | `45000` |
-| `TRUST_PROXY` | `1` |
-| `ALLOW_PRIVATE_TARGETS` | `false` |
-| `GEMINI_DAILY_CALL_LIMIT` | `25` |
-| `MONITOR_CHECK_LEASE_MS` | `120000` |
-| `SCHEDULER_MAX_CHECKS_PER_MINUTE` | `60` |
-| `SCHEDULER_CONCURRENCY` | `5` |
-| `SCHEDULER_JITTER_MS` | `5000` |
-| `WORKSPACE_INACTIVE_PURGE_DAYS` | `90` |
-| Other limits and behavior settings | Copy the corresponding variable names and non-secret defaults from `.env.example`; set `MONITOR_RATE_LIMIT_MAX=10`, `API_RATE_LIMIT_MAX=120`, `MONITOR_MAX_BATCH_SIZE=100`, and `MONITOR_CONCURRENCY=5` unless you have a reason to change them. |
-
-5. In Atlas, add `0.0.0.0/0` under Network Access because serverless function egress addresses are not fixed on the Hobby setup described here. This allows connections from any IPv4 address, so protect the database user with a new, strong, unique password used only for this project. Never reuse a leaked or previously shared password. URL-encode special characters in the URI password.
-6. Before the first deploy, set `MONGODB_URI` and the other required values in your local shell, then run `npm run sync:indexes` once. This connects to the configured database and creates the app's indexes, including active-alert deduplication, rate-limit TTL, scheduler budget TTL, and check-history TTL indexes. Do not run it against the wrong database. Vercel cold starts do not build indexes automatically.
-7. Deploy. On the first deployment, Vercel provides `VERCEL_URL`, which is used as a temporary public URL fallback. Copy the production URL, set `PUBLIC_APP_URL` to its HTTPS origin in the dashboard, and redeploy so the workspace cookie and Origin guard use the stable public origin.
-8. To deploy later, push changes to the configured `v2` production branch or use **Deployments → Redeploy**. Do not use a preview deployment to validate Cron; Cron runs only for production.
-9. Open **Logs → Functions** for API/runtime errors. Open **Settings → Cron Jobs** (or the project's Cron view) for scheduled invocation status. The app logs only safe summaries and counts for these routes.
-
-### Scheduled checks and plan limits
-
-`vercel.json` schedules the purge route once daily, which is the maximum cron frequency on Hobby. Hobby permits up to 100 cron jobs per project, but its minimum frequency is daily and execution timing has up to ±59 minutes of precision. Pro also allows up to 100 jobs, with a minimum frequency of once per minute and per-minute precision. The Pro example in [`docs/vercel.pro.example.json`](docs/vercel.pro.example.json) adds `/api/cron/run-due` every minute; merge that cron entry into `vercel.json` only after upgrading the project to Pro.
-
-On Hobby, use an external scheduler that supports an HTTP GET and a custom header to call `https://<your-production-domain>/api/cron/run-due` every minute with `Authorization: Bearer <CRON_SECRET>`. Store the secret in the scheduler's secret/header field. The request should be `GET`, with the header `Authorization: Bearer <value stored in CRON_SECRET>`. The endpoint returns counts only. The 45-second work budget leaves time under the configured 60-second function ceiling; a single in-progress check can finish before the handler returns.
-
-Vercel Functions use Fluid Compute by default for Express. Current documented maximum durations are 300 seconds on Hobby and 800 seconds on Pro; Pro's 1,800-second extended maximum is in beta. This project explicitly sets `maxDuration` to 60 seconds, and the cron worker has a 45-second budget. Hobby cron is daily only, so checks will not run every minute from Vercel Cron on that plan. Cron requests are GET requests to production deployments, can overlap, and are not retried automatically after failures; the database lease prevents duplicate claims. Monitor schedules can therefore be delayed by function limits, platform availability, or external scheduler reliability.
-
-### First-visit checklist
-
-- Visit the production URL and confirm the dashboard loads without a function error.
-- Create a workspace; the browser receives the private HttpOnly cookie.
-- Add a public HTTP or HTTPS monitor and use **Check now**.
-- Confirm its status, check history, and any alert appear for that workspace.
-- Verify `GET /health` returns a connected database status.
-- Confirm the production `PUBLIC_APP_URL` matches the browser origin and the cron secret is set before enabling scheduled calls.
-
-The app does not poll user-provided URLs from a request. Monitors are checked only by the scheduled/manual check service, which applies the URL safety guard. Vercel's `trust proxy` setting is one hop: Express takes the client address from the forwarded chain supplied by Vercel's trusted edge proxy (`x-forwarded-for`), which Vercel overwrites to prevent a client from choosing its own value. Cookies are `Secure` in production; Helmet's CSP remains self-only for scripts/connects, permits inline styles required by the current client, and blocks framing and objects.
 
 ### MongoDB connection
 
@@ -265,7 +204,7 @@ URLs must use HTTP or HTTPS and standard ports, contain no credentials, and reso
 
 The scheduler is enabled by default. It stores due times and short leases in MongoDB to prevent the same monitor running twice at once, uses jitter, bounded concurrency and a shared per-process cap for scheduled and manual checks. Paused monitors are skipped. A check can also be started immediately; this endpoint is separately rate limited per workspace and per monitor. Once the manual check begins, the next scheduled time advances by that monitor's interval. After the configured number of consecutive healthy checks (default 2), active alerts for that monitor are resolved with an automatic-resolution reason. A later failure creates a new alert.
 
-On local development and Render, the scheduler runs inside the server process with a process-local outgoing-check budget. On Vercel, in-process scheduler and purge timers are disabled; HTTP cron routes use MongoDB leases, persistent fairness rotation, and database-backed per-minute counters to coordinate across function instances.
+The scheduler and workspace purge run inside the local server process. Scheduled checks use persisted due times and short MongoDB leases to prevent the same monitor from running twice at once.
 
 | Method and path | Purpose | Request body |
 | --- | --- | --- |
@@ -445,13 +384,13 @@ Tests use mocked services and do not require a MongoDB connection or Gemini API 
 
 ## Public-demo abuse controls
 
-This app has no accounts, so alerts are shared among its users. The default per-IP limit for `POST /monitor` is 10 requests per 15 minutes; `/alerts` reads and resolves allow 120 requests per IP per 15 minutes. Tune the window and maximum values with the `*_RATE_LIMIT_*` variables. These in-memory limits are per server process; use a shared rate-limit store if you deploy multiple server instances.
+This app has no accounts, so alerts are shared among its users. The default per-IP limit for `POST /monitor` is 10 requests per 15 minutes; `/alerts` reads and resolves allow 120 requests per IP per 15 minutes. Tune the window and maximum values with the `*_RATE_LIMIT_*` variables. These in-memory limits apply to this local server process.
 
 Helmet adds security headers. The CSP allows scripts, API connections, forms, fonts, and assets from the same origin; `img-src` also permits `data:`. It blocks objects and framing. `style-src 'unsafe-inline'` is enabled because GSAP animates element styles at runtime. The app does not allow inline scripts. `upgrade-insecure-requests` is disabled in development and enabled in production.
 
 Gemini attempts are counted atomically in one MongoDB counter document per UTC day. The default cap is 25 actual request attempts, including retries. At the cap, the app logs the event once for that day and uses fallback alert messages; alert persistence continues. Set `GEMINI_DAILY_CALL_LIMIT` to adjust the cap.
 
-Leave `TRUST_PROXY=0` when the server directly receives client traffic. If deployed behind a reverse proxy, set it to the exact number of trusted proxy hops (for example, `1` for one known proxy). Do not set a broad trust value unless the deployment topology is controlled; Express uses this setting to determine the client IP for rate limits.
+Leave `TRUST_PROXY=0` when the local server directly receives client traffic. If you run it behind a reverse proxy, set the exact number of trusted proxy hops (for example, `1` for one known proxy). Do not use a broad trust value; Express uses this setting to determine the client IP for rate limits.
 
 ## Architecture and video
 
@@ -465,27 +404,3 @@ The browser creates a private workspace on first visit and keeps its access cred
 The Monitors view polls every 15 seconds while the page is visible and stops polling while the browser tab is hidden. Its detail view pages check history and displays the summary fields returned by the workspace API. In Alerts, choose **My workspace** or **Shared demo** to switch alert sources; both sources retain the Active/Resolved tabs, API-name search, severity filter, and pagination.
 
 The Monitors page displays this privacy reminder: “Demo. Do not monitor private or sensitive systems. Only status, timing and record counts are stored. Anyone with your workspace link can see your monitors.” Do not enter URLs for private systems or sensitive data.
-
-## Deploy to Render
-
-The repository includes [render.yaml](render.yaml) for one Node web service. It installs root and client dependencies, builds the React client, starts Express, and sets `/health` as the health check. The selected `1c-2g` plan is a paid, always-on single instance so the in-process monitor scheduler continues to run. Render renamed its compute plans in August 2026; `1c-2g` is the current plan ID for the former Standard plan.
-
-### Create the service
-
-1. Push the `v2` branch to the GitHub repository you want to deploy. Do not choose `master` or tag `v1.0` for this app phase.
-2. In the Render Dashboard, choose **New > Blueprint**, connect the GitHub repository, select branch `v2`, and let Render find the root `render.yaml`. Review the single web service and apply the Blueprint. The build command is `npm ci && npm --prefix client ci && npm run build:client`; the start command is `npm start`.
-3. The Blueprint selects one paid `1c-2g` instance, pins Node to `24.21.0`, sets `NODE_ENV=production`, `TRUST_PROXY=1`, and `ALLOW_PRIVATE_TARGETS=false`, and uses `/health`. If choosing a different plan in the Dashboard, use a paid plan for the scheduler to remain continuously active. `TRUST_PROXY=1` tells Express to trust the immediate Render proxy and use the forwarded client address for `request.ip` and per-IP rate limits. Render terminates HTTPS at its load balancer and forwards the request to the service.
-4. During Blueprint setup, Render asks for the `sync: false` settings. Set `MONGODB_URI`, `GEMINI_API_KEY`, `GEMINI_MODEL`, and `PUBLIC_APP_URL` in the Dashboard. For `PUBLIC_APP_URL`, use the HTTPS `onrender.com` URL assigned to this service; if setting it after creation, save the variable and redeploy. Render prompts for `sync: false` values when the Blueprint is first created; add later secret values in the service Environment page. Never put credential values in `render.yaml` or commit them.
-5. In MongoDB Atlas, open **Security > Network Access** and add `0.0.0.0/0` so the Render service can reach the cluster despite Render's changing outbound IPs. This allows connection attempts from any IPv4 address, so use a new, strong, unique database-user password before adding the URI, URL-encode special characters in it, and grant the database user only the access the app needs. Store the resulting URI only in Render's environment settings. Do not reuse a password that has appeared in chat or elsewhere.
-6. Let the initial deploy finish. Later, deploy a new pushed commit from `v2` using **Manual Deploy > Deploy latest commit**, or let the linked branch auto-deploy if enabled. Render runs the build before starting the service.
-7. To inspect a deployment, open the service's **Logs** view and select deploy/runtime logs. Look for the sanitized startup message, the database connected message, and the server listening message. Never copy secret environment values into a support request.
-
-### First-visit checklist
-
-1. Open the service's HTTPS URL. The React page and its assets should load from the same service as the API.
-2. Request `/health`; expect HTTP 200 with `{"status":"ok","database":"connected"}`.
-3. Confirm the browser creates a private workspace and displays the workspace privacy notice.
-4. Add a public HTTP or HTTPS JSON endpoint with a check interval of at least 60 seconds. Private and loopback targets are rejected in production.
-5. Confirm the monitor appears, then check its state, history, and alerts after a scheduled check. Keep the paid instance running for scheduled checks.
-
-Render Free web services spin down after 15 minutes without inbound traffic and take about a minute to start again. During sleep the in-process scheduler stops too; it cannot run scheduled checks until the service wakes. Free instances can also restart, so they are suitable for previewing but not for this always-on scheduler use. Render documents these limits in [Deploy for Free](https://render.com/docs/free). A paid service avoids idle spin-down.

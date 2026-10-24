@@ -11,7 +11,6 @@ import { createHttpError } from "./middleware/httpError.js";
 import { createRateLimiters } from "./middleware/rateLimits.js";
 import { createCookieOriginGuard } from "./middleware/cookieOriginGuard.js";
 import { createApiRoutes } from "./routes/index.js";
-import { connectToDatabase } from "./db/mongoose.js";
 
 const clientDistDirectory = fileURLToPath(new URL("../client/dist/", import.meta.url));
 
@@ -28,7 +27,6 @@ export function createApp({
   clientDirectory = clientDistDirectory,
   appLogger = logger,
   logRequests = true,
-  connectDatabase = connectToDatabase,
 } = {}) {
   const settings = {
     bodyLimit: env.monitorBodyLimit,
@@ -43,9 +41,6 @@ export function createApp({
     apiRateLimitMax: env.apiRateLimitMax,
     trustProxy: env.trustProxy,
     nodeEnv: env.nodeEnv,
-    isVercel: env.isVercel,
-    cronSecret: env.cronSecret,
-    cronRunDueBudgetMs: env.cronRunDueBudgetMs,
     publicAppUrl: env.publicAppUrl,
     workspaceCreateRateLimitWindowMs: env.workspaceCreateRateLimitWindowMs,
     workspaceCreateRateLimitMax: env.workspaceCreateRateLimitMax,
@@ -76,7 +71,7 @@ export function createApp({
     throw new Error("ALERTS_DEFAULT_PAGE_SIZE cannot exceed ALERTS_MAX_PAGE_SIZE");
   }
   const app = express();
-  const limits = createRateLimiters(settings, { serverless: settings.isVercel });
+  const limits = createRateLimiters(settings);
   app.set("trust proxy", settings.trustProxy);
 
   if (logRequests) {
@@ -111,26 +106,9 @@ export function createApp({
     },
   }));
   app.use(createCookieOriginGuard({ nodeEnv: settings.nodeEnv, publicAppUrl: settings.publicAppUrl }));
-  if (settings.isVercel) app.use((request, _response, next) => {
-    const forwardedPath = new URL(request.url, "http://vercel.internal");
-    const routePath = forwardedPath.searchParams.get("route");
-    if (routePath?.startsWith("/")) {
-      forwardedPath.searchParams.delete("route");
-      request.url = routePath + (forwardedPath.search ? forwardedPath.search : "");
-    }
-    next();
-  });
-  if (settings.isVercel) app.use(async (request, response, next) => {
-    try { await connectDatabase(env.mongoUri, { serverless: true }); next(); }
-    catch {
-      if (request.path === "/api/health" || request.path === "/health") return next();
-      return response.status(503).json({ error: { code: "DATABASE_UNAVAILABLE", message: "Database is unavailable." } });
-    }
-  });
-  const apiPrefix = settings.isVercel ? "/api" : "";
-  app.post(`${apiPrefix}/monitor`, limits.monitor);
-  app.use(`${apiPrefix}/alerts`, limits.api);
-  app.use(`${apiPrefix}/workspaces`, limits.api);
+  app.post("/monitor", limits.monitor);
+  app.use("/alerts", limits.api);
+  app.use("/workspaces", limits.api);
   app.use(express.json({ limit: settings.bodyLimit }));
   const clientIndexPath = path.join(clientDirectory, "index.html");
   if (existsSync(clientIndexPath)) {
@@ -149,15 +127,12 @@ export function createApp({
     settings,
     logger: appLogger,
     rateLimits: limits,
-    isVercel: settings.isVercel,
-    cronSecret: settings.cronSecret,
-    cronRunDueBudgetMs: settings.cronRunDueBudgetMs,
   })) {
-    app.use(settings.isVercel ? "/api" : "/", router);
+    app.use("/", router);
   }
 
   app.get(/.*/, (request, response, next) => {
-    const isApiPath = /^\/(?:api\/)?(?:monitor|alerts|workspaces|health|cron)(?:\/|$)/.test(request.path);
+    const isApiPath = /^\/(?:monitor|alerts|workspaces|health)(?:\/|$)/.test(request.path);
     if (isApiPath || !request.accepts("html") || !existsSync(clientIndexPath)) return next();
     response.sendFile(clientIndexPath, (error) => {
       if (error) next(error);

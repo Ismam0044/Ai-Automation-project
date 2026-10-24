@@ -4,15 +4,10 @@ import { readFile } from "node:fs/promises";
 
 process.env.MONGODB_URI ??= "mongodb://127.0.0.1:27017/wiring_mock_only";
 process.env.NODE_ENV = "test";
-process.env.VERCEL = "1";
-process.env.TRUST_PROXY = "1";
 
-const [{ createMonitorCheckRuntime }, { default: apiApp }] = await Promise.all([
-  import("../src/services/monitorCheckRuntime.js"),
-  import("../api/index.js"),
-]);
+const { createMonitorCheckRuntime } = await import("../src/services/monitorCheckRuntime.js");
 
-test("local server and Vercel entry build the shared check runtime with DB and fetcher mocked", async () => {
+test("local server builds the shared check runtime with DB and fetcher mocked", async () => {
   const settings = {
     maxMonitorsPerWorkspace: 10,
     maxTotalMonitors: 100,
@@ -51,8 +46,6 @@ test("local server and Vercel entry build the shared check runtime with DB and f
     expect_records: false,
   });
   assert.equal(result.status, "healthy");
-  assert.equal(typeof apiApp, "function", "api/index.js imports the Express app and its real route wiring");
-
   const serverSource = await readFile(new URL("../src/server.js", import.meta.url), "utf8");
   assert.match(serverSource, /createMonitorCheckRuntime\(/);
   assert.match(serverSource, /llmService:\s*\{\s*generateAlertMessage\s*\}/);

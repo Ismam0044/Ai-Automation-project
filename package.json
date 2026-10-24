@@ -12,7 +12,6 @@
     "dev:client": "npm --prefix client run dev",
     "build:client": "npm --prefix client run build",
     "check:env": "node scripts/check-env.js",
-    "sync:indexes": "node scripts/sync-indexes.js",
     "test": "node --test",
     "predev": "npm --prefix client run build"
   },

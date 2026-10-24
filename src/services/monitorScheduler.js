@@ -7,7 +7,6 @@ export function createMonitorScheduler({
   tickIntervalMs = 5_000,
   concurrency = 5,
   checkBudget = monitorCheckBudget,
-  workspaceCursor,
   leaseMs = 30_000,
   jitterMs = 5_000,
   clock = () => new Date(),
@@ -30,7 +29,7 @@ export function createMonitorScheduler({
         if (allowance <= 0) break;
         const workspaces = await monitorRepository.dueWorkspaceIds(now);
         if (workspaces.length === 0) break;
-        const offset = workspaceCursor ? await workspaceCursor.nextOffset(workspaces.length) : cursor % workspaces.length;
+        const offset = cursor % workspaces.length;
         const fairOrder = [...workspaces.slice(offset), ...workspaces.slice(0, offset)];
         const claimed = []; let idleRounds = 0; let position = 0;
         while (claimed.length < allowance && idleRounds < fairOrder.length && Date.now() - startedAt < timeBudgetMs) {
