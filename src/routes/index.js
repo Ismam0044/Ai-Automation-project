@@ -13,8 +13,8 @@ import { createMonitorController } from "../controllers/monitorController.js";
 import { createMonitorResourceController } from "../controllers/monitorResourceController.js";
 import { createWorkspaceAccessController, createWorkspaceController } from "../controllers/workspaceController.js";
 import { createMonitorRepository } from "../services/monitorRepository.js";
-import { createMonitorCheckService } from "../services/monitorCheckService.js";
 import { createCheckHistoryService } from "../services/checkHistoryService.js";
+import { createMonitorCheckRuntime } from "../services/monitorCheckRuntime.js";
 import { createWorkspaceService } from "../services/workspaceService.js";
 import { createWorkspaceAccessLinkService } from "../services/workspaceAccessLinkService.js";
 import { createOptionalWorkspaceAuth } from "../middleware/workspaceAuth.js";
@@ -23,6 +23,12 @@ import { createAlertRoutes } from "./alertRoutes.js";
 import healthRoutes from "./healthRoutes.js";
 import { createMonitorRoutes } from "./monitorRoutes.js";
 import { createWorkspaceRoutes } from "./workspaceRoutes.js";
+import { createCronController } from "../controllers/cronController.js";
+import { createCronRoutes } from "./cronRoutes.js";
+import { createMonitorScheduler } from "../services/monitorScheduler.js";
+import { createWorkspacePurgeService } from "../services/workspacePurgeService.js";
+import { createMongoMonitorCheckBudget } from "../services/mongoMonitorCheckBudget.js";
+import { createMongoSchedulerCursor } from "../services/mongoSchedulerCursor.js";
 
 export function createApiRoutes({
   alertService = { findActiveAlertForDetection, saveAlert, listActiveAlerts, listAlerts, resolveAlertById, resolveMonitorAlerts },
@@ -36,6 +42,9 @@ export function createApiRoutes({
   rateLimits,
   settings,
   logger,
+  cronSecret,
+  cronRunDueBudgetMs,
+  isVercel = false,
 }) {
   const monitorService = createMonitorService({
     concurrency: settings.concurrency,
@@ -51,17 +60,25 @@ export function createApiRoutes({
   const effectiveCheckHistoryService = checkHistoryService ?? createCheckHistoryService({
     retentionDays: settings.checkHistoryRetentionDays,
   });
-  const effectiveMonitorCheckService = monitorCheckService ?? createMonitorCheckService({
+  const effectiveMonitorCheckService = monitorCheckService ?? createMonitorCheckRuntime({
+    settings,
     monitorRepository: effectiveMonitorRepository,
     historyService: effectiveCheckHistoryService,
     alertService,
     llmService,
-    autoResolveHealthyChecks: settings.autoResolveHealthyChecks,
-    leaseMs: Math.max(settings.monitorCheckLeaseMs, 30_000 + 2 * settings.geminiTimeoutMs + 10_000),
-    responseMaxBytes: settings.monitorResponseMaxBytes,
-    allowPrivateTargets: settings.allowPrivateTargets,
     logger,
-  });
+    ...(isVercel ? { checkBudget: createMongoMonitorCheckBudget({ maxPerMinute: settings.schedulerMaxChecksPerMinute }) } : {}),
+  }).monitorCheckService;
+  const effectiveScheduler = isVercel ? createMonitorScheduler({
+    monitorRepository: effectiveMonitorRepository,
+    monitorCheckService: effectiveMonitorCheckService,
+    concurrency: settings.schedulerConcurrency,
+    checkBudget: createMongoMonitorCheckBudget({ maxPerMinute: settings.schedulerMaxChecksPerMinute }),
+    workspaceCursor: createMongoSchedulerCursor(),
+    leaseMs: Math.max(settings.monitorCheckLeaseMs, 30_000 + 2 * settings.geminiTimeoutMs + 10_000),
+    jitterMs: settings.schedulerJitterMs,
+    logger,
+  }) : null;
   const effectiveWorkspaceAccessLinkService = workspaceAccessLinkService ?? createWorkspaceAccessLinkService();
   const effectivePublicUrlValidator = publicUrlValidator ?? createPublicUrlValidator({ allowPrivateTargets: settings.allowPrivateTargets });
   const alertController = createAlertController(alertService, {
@@ -87,7 +104,7 @@ export function createApiRoutes({
     checkHistoryMaxPageSize: settings.checkHistoryMaxPageSize,
   });
 
-  return [
+  const routes = [
     healthRoutes,
     createMonitorRoutes({ controller: monitorController, maxBatchSize: settings.maxBatchSize }),
     createAlertRoutes(alertController, createOptionalWorkspaceAuth(effectiveWorkspaceService)),
@@ -102,4 +119,12 @@ export function createApiRoutes({
       checkNowMonitorLimiter: rateLimits.checkNowMonitor,
     }),
   ];
+  if (isVercel) routes.push(createCronRoutes(createCronController({
+    secret: cronSecret,
+    scheduler: effectiveScheduler,
+    purgeService: createWorkspacePurgeService(),
+    timeBudgetMs: cronRunDueBudgetMs,
+    purgeDays: settings.workspaceInactivePurgeDays,
+  })));
+  return routes;
 }

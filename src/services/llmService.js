@@ -190,7 +190,7 @@ export function createLlmService({
   timeoutMs = readTimeoutMs(),
   findActiveAlert = findActiveAlertForDetection,
   usageService = { reserveGeminiCall },
-  dailyCallLimit = Number(process.env.GEMINI_DAILY_CALL_LIMIT ?? 100),
+  dailyCallLimit = Number(process.env.GEMINI_DAILY_CALL_LIMIT ?? 25),
   logger: serviceLogger = logger,
 } = {}) {
   const effectiveTimeoutMs = readTimeoutMs(timeoutMs);

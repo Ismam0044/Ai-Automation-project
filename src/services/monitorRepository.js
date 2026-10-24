@@ -23,13 +23,13 @@ export function createMonitorRepository({
     const update = { $inc: { count: 1 } };
     try {
       return await CapacityModel.findOneAndUpdate(filter, update, {
-        new: true,
+        returnDocument: "after",
         upsert: true,
         setDefaultsOnInsert: false,
       });
     } catch (error) {
       if (!isDuplicateKey(error)) throw error;
-      return CapacityModel.findOneAndUpdate(filter, update, { new: true });
+      return CapacityModel.findOneAndUpdate(filter, update, { returnDocument: "after" });
     }
   }
 
@@ -37,7 +37,7 @@ export function createMonitorRepository({
     await CapacityModel.findOneAndUpdate(
       { _id: "global", count: { $gt: 0 } },
       { $inc: { count: -1 } },
-      { new: true },
+      { returnDocument: "after" },
     );
   }
 
@@ -45,7 +45,7 @@ export function createMonitorRepository({
     await WorkspaceModel.findOneAndUpdate(
       { _id: workspaceId, monitor_count: { $gt: 0 } },
       { $inc: { monitor_count: -1 } },
-      { new: true },
+      { returnDocument: "after" },
     );
   }
 
@@ -56,7 +56,7 @@ export function createMonitorRepository({
         $or: [{ monitor_count: { $lt: maxMonitorsPerWorkspace } }, { monitor_count: { $exists: false } }],
       },
       { $inc: { monitor_count: 1 } },
-      { new: true },
+      { returnDocument: "after" },
     );
     if (!workspace) {
       const exists = await WorkspaceModel.exists({ _id: workspaceId });
@@ -108,7 +108,7 @@ export function createMonitorRepository({
     return MonitorModel.findOneAndUpdate(
       { _id: candidate._id, ...filter },
       { $set: { lease_until: new Date(now.getTime() + leaseMs), next_check_at: nextCheckAt } },
-      { new: true },
+      { returnDocument: "after" },
     );
   }
 
@@ -125,7 +125,7 @@ export function createMonitorRepository({
         $or: [{ lease_until: null }, { lease_until: { $exists: false } }, { lease_until: { $lte: now } }],
       },
       { $set: { lease_until: new Date(now.getTime() + leaseMs) } },
-      { new: true },
+      { returnDocument: "after" },
     );
   }
 
@@ -153,7 +153,7 @@ export function createMonitorRepository({
     return MonitorModel.findOneAndUpdate(
       { _id: monitorId, workspace_id: workspaceId },
       { $inc: { consecutive_healthy_checks: 1 } },
-      { new: true },
+      { returnDocument: "after" },
     );
   }
 
@@ -176,7 +176,7 @@ export function createMonitorRepository({
       return MonitorModel.findOneAndUpdate(
         { _id: monitorId, workspace_id: workspaceId },
         { $set: data },
-        { new: true, runValidators: true },
+      { returnDocument: "after", runValidators: true },
       );
     },
     remove,
@@ -199,7 +199,7 @@ export function createMonitorRepository({
       await CapacityModel.findOneAndUpdate(
         { _id: "global" },
         { $set: { count: total } },
-        { upsert: true, new: true, setDefaultsOnInsert: false },
+        { upsert: true, returnDocument: "after", setDefaultsOnInsert: false },
       );
       const grouped = await MonitorModel.aggregate([
         { $group: { _id: "$workspace_id", count: { $sum: 1 } } },

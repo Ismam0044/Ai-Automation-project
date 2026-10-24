@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 process.env.MONGODB_URI ??= "mongodb://127.0.0.1:27017/mock_only";
 const { createApp } = await import("../../src/app.js");
@@ -124,6 +127,45 @@ test("GET /health keeps its existing disconnected response shape", async () => {
     assert.equal(response.status, 503);
     assert.deepEqual(await response.json(), { status: "unavailable", database: "disconnected" });
   });
+});
+
+test("GET /health reports a connected database as ready", async () => {
+  const { mongoose } = await import("../../src/db/mongoose.js");
+  const previousState = mongoose.connection.readyState;
+  mongoose.connection.readyState = 1;
+  try {
+    await withServer({}, async (base) => {
+      const response = await fetch(`${base}/health`);
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), { status: "ok", database: "connected" });
+    });
+  } finally {
+    mongoose.connection.readyState = previousState;
+  }
+});
+
+test("built-client hosting serves static assets and falls back to index for client routes", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "monitor-client-"));
+  try {
+    await mkdir(path.join(directory, "assets"));
+    await writeFile(path.join(directory, "index.html"), "<!doctype html><title>client fixture</title>");
+    await writeFile(path.join(directory, "assets", "app.js"), "globalThis.fixtureLoaded = true;");
+    await withServer({ clientDirectory: directory }, async (base) => {
+      const page = await fetch(`${base}/monitors`, { headers: { accept: "text/html" } });
+      assert.equal(page.status, 200);
+      assert.match(await page.text(), /client fixture/);
+
+      const asset = await fetch(`${base}/assets/app.js`);
+      assert.equal(asset.status, 200);
+      assert.match(await asset.text(), /fixtureLoaded/);
+
+      const health = await fetch(`${base}/health`, { headers: { accept: "text/html" } });
+      assert.equal(health.status, 503);
+      assert.deepEqual(await health.json(), { status: "unavailable", database: "disconnected" });
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("POST /monitor handles the assessment sample and skips healthy items", async () => {

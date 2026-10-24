@@ -12,40 +12,35 @@ import { Workspace } from "./models/workspace.js";
 import { WorkspaceAccessLink } from "./models/workspaceAccessLink.js";
 import { createWorkspacePurgeService } from "./services/workspacePurgeService.js";
 import { createMonitorScheduler } from "./services/monitorScheduler.js";
-import { createMonitorCheckService } from "./services/monitorCheckService.js";
-import { createMonitorRepository } from "./services/monitorRepository.js";
-import { createCheckHistoryService } from "./services/checkHistoryService.js";
+import { createMonitorCheckRuntime } from "./services/monitorCheckRuntime.js";
+import { generateAlertMessage } from "./services/llmService.js";
 
 try {
   await connectToDatabase(env.mongoUri);
-  await Alert.init();
-  await GeminiDailyUsage.init();
-  await Workspace.init();
-  await Monitor.init();
-  await MonitorCheck.init();
-  await MonitorCapacity.init();
-  await WorkspaceAccessLink.init();
+  if (!env.isVercel) {
+    await Alert.init();
+    await GeminiDailyUsage.init();
+    await Workspace.init();
+    await Monitor.init();
+    await MonitorCheck.init();
+    await MonitorCapacity.init();
+    await WorkspaceAccessLink.init();
+  }
   const workspacePurgeService = createWorkspacePurgeService();
-  await workspacePurgeService.purgeInactiveWorkspaces(env.workspaceInactivePurgeDays);
-  const purgeTimer = setInterval(() => {
-    workspacePurgeService.purgeInactiveWorkspaces(env.workspaceInactivePurgeDays)
-      .catch((error) => logger.error({ err: error }, "Inactive workspace purge failed"));
-  }, 24 * 60 * 60 * 1000);
-  purgeTimer.unref();
+  let purgeTimer;
+  if (!env.isVercel) {
+    await workspacePurgeService.purgeInactiveWorkspaces(env.workspaceInactivePurgeDays);
+    purgeTimer = setInterval(() => {
+      workspacePurgeService.purgeInactiveWorkspaces(env.workspaceInactivePurgeDays)
+        .catch((error) => logger.error({ err: error }, "Inactive workspace purge failed"));
+    }, 24 * 60 * 60 * 1000);
+    purgeTimer.unref();
+  }
   let scheduler;
-  if (env.schedulerEnabled) {
-    const monitorRepository = createMonitorRepository({
-      maxMonitorsPerWorkspace: env.maxMonitorsPerWorkspace,
-      maxTotalMonitors: env.maxTotalMonitors,
-    });
-    const historyService = createCheckHistoryService({ retentionDays: env.checkHistoryRetentionDays });
-    const monitorCheckService = createMonitorCheckService({
-      monitorRepository,
-      historyService,
-      autoResolveHealthyChecks: env.autoResolveHealthyChecks,
-      leaseMs: Math.max(env.monitorCheckLeaseMs, 30_000 + 2 * env.geminiTimeoutMs + 10_000),
-      responseMaxBytes: env.monitorResponseMaxBytes,
-      allowPrivateTargets: env.allowPrivateTargets,
+  if (env.schedulerEnabled && !env.isVercel) {
+    const { monitorRepository, monitorCheckService } = createMonitorCheckRuntime({
+      settings: env,
+      llmService: { generateAlertMessage },
       logger,
     });
     scheduler = createMonitorScheduler({
@@ -59,17 +54,24 @@ try {
     });
     scheduler.start();
   }
-  const server = app.listen(env.port, () => {
+  const server = app.listen(env.port, "0.0.0.0", () => {
     logger.info({ port: env.port }, "API monitor server listening");
   });
 
   const shutdown = (signal) => {
     logger.info({ signal }, "Shutting down server");
-    clearInterval(purgeTimer);
+    if (purgeTimer) clearInterval(purgeTimer);
     scheduler?.stop();
     server.close(async () => {
-      await mongoose.disconnect();
-      process.exit(0);
+      try {
+        await scheduler?.stop();
+        await mongoose.disconnect();
+      } catch (shutdownError) {
+        logger.error({ err: shutdownError }, "Graceful shutdown did not complete cleanly");
+        process.exitCode = 1;
+      } finally {
+        process.exit();
+      }
     });
   };
 

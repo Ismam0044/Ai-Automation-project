@@ -98,7 +98,7 @@ test("saving updates an existing active alert and increments its occurrence coun
   assert.equal(calls[0][1].$set.input_snapshot, snapshot);
   assert.equal(calls[0][1].$set.message, "Caller message");
   assert.equal(calls[0][1].$set.message_source, "model");
-  assert.deepEqual(calls[0][2], { new: true, runValidators: true });
+  assert.deepEqual(calls[0][2], { returnDocument: "after", runValidators: true });
 });
 
 test("saving a new alert uses the active status and initial occurrence count", async () => {
@@ -246,6 +246,6 @@ test("resolving by id changes only an active alert to resolved", async () => {
   assert.equal(await service.resolveAlertById("alert-id"), expected);
   assert.deepEqual(call[0], { _id: "alert-id", status: "active", workspace_id: null });
   assert.deepEqual(call[1], { $set: { status: "resolved", resolution_reason: null } });
-  assert.deepEqual(call[2], { new: true, runValidators: true });
+  assert.deepEqual(call[2], { returnDocument: "after", runValidators: true });
 });
 

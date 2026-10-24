@@ -14,7 +14,7 @@ export function createGeminiUsageService({ UsageModel = GeminiDailyUsage, clock 
       return await UsageModel.findOneAndUpdate(
         { day },
         { $setOnInsert: { day, calls: 0, cap_warning_logged: false } },
-        { upsert: true, new: true, setDefaultsOnInsert: true },
+        { upsert: true, returnDocument: "after", setDefaultsOnInsert: true },
       );
     } catch (error) {
       if (!isDuplicateKey(error)) throw error;
@@ -26,7 +26,7 @@ export function createGeminiUsageService({ UsageModel = GeminiDailyUsage, clock 
     return UsageModel.findOneAndUpdate(
       { day, cap_warning_logged: false },
       { $set: { cap_warning_logged: true } },
-      { new: true },
+      { returnDocument: "after" },
     );
   }
 
@@ -41,7 +41,7 @@ export function createGeminiUsageService({ UsageModel = GeminiDailyUsage, clock 
       ? await UsageModel.findOneAndUpdate(
         { day, calls: { $lt: dailyLimit } },
         { $inc: { calls: 1 } },
-        { new: true },
+        { returnDocument: "after" },
       )
       : null;
 

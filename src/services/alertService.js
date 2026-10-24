@@ -64,7 +64,7 @@ export function createAlertService({ AlertModel = Alert } = {}) {
       },
       $inc: { occurrence_count: 1 },
     };
-    const updateOptions = { new: true, runValidators: true };
+    const updateOptions = { returnDocument: "after", runValidators: true };
 
     let existingAlert = await AlertModel.findOneAndUpdate(filter, update, updateOptions);
     if (!existingAlert && workspaceId === null && monitorId === null) {
@@ -172,7 +172,7 @@ export function createAlertService({ AlertModel = Alert } = {}) {
     return AlertModel.findOneAndUpdate(
       { _id: id, status: "active", workspace_id: workspaceId },
       { $set: { status: "resolved", resolution_reason: reason } },
-      { new: true, runValidators: true },
+      { returnDocument: "after", runValidators: true },
     );
   }
 

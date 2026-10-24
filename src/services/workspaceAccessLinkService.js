@@ -28,7 +28,7 @@ export function createWorkspaceAccessLinkService({ LinkModel = WorkspaceAccessLi
         consumed_at: null,
       },
       { $set: { consumed_at: clock() } },
-      { new: true },
+      { returnDocument: "after" },
     );
   }
 

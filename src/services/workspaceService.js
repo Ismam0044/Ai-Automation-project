@@ -44,7 +44,7 @@ export function createWorkspaceService({ WorkspaceModel = Workspace } = {}) {
     return WorkspaceModel.findOneAndUpdate(
       { _id: workspaceId, access_key_hashes: hashAccessKey(accessKey) },
       { $set: { last_active_at: new Date() } },
-      { new: true },
+      { returnDocument: "after" },
     ).select("_id name last_active_at");
   }
 
@@ -56,7 +56,7 @@ export function createWorkspaceService({ WorkspaceModel = Workspace } = {}) {
     return WorkspaceModel.findOneAndUpdate(
       { _id: workspace._id, access_key_hashes: storedHash },
       { $set: { last_active_at: new Date() } },
-      { new: true },
+      { returnDocument: "after" },
     ).select("_id name last_active_at");
   }
 
@@ -68,7 +68,7 @@ export function createWorkspaceService({ WorkspaceModel = Workspace } = {}) {
         $push: { access_key_hashes: { $each: [hashAccessKey(accessKey)], $slice: -MAX_WORKSPACE_KEYS } },
         $set: { last_active_at: new Date() },
       },
-      { new: true, runValidators: true },
+      { returnDocument: "after", runValidators: true },
     ).select("_id name last_active_at");
     return workspace ? { workspace, accessKey } : null;
   }

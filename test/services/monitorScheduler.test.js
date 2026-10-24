@@ -55,6 +55,35 @@ test("monitor scheduler ignores overlapping ticks while a claimed check is runni
   assert.equal(await first, 1);
 });
 
+test("stopping the scheduler waits for an in-progress check to finish", async () => {
+  let finish;
+  let entered;
+  let claimed = false;
+  const started = new Promise((resolve) => { entered = resolve; });
+  const scheduler = createMonitorScheduler({
+    monitorRepository: {
+      async dueWorkspaceIds() { return ["w1"]; },
+      async claimDueForWorkspace(workspaceId) {
+        if (claimed) return null;
+        claimed = true;
+        return { _id: "m1", workspace_id: workspaceId };
+      },
+      async releaseLease() {},
+    },
+    monitorCheckService: { run() { entered(); return new Promise((resolve) => { finish = resolve; }); } },
+    logger: quietLogger,
+  });
+  const run = scheduler.runDueOnce();
+  await started;
+  let stopped = false;
+  const stopping = scheduler.stop().then(() => { stopped = true; });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(stopped, false);
+  finish();
+  await Promise.all([run, stopping]);
+  assert.equal(stopped, true);
+});
+
 test("repository claims a due monitor atomically and excludes an active lease", async () => {
   const now = new Date("2026-10-24T00:00:00Z");
   let claimed = false;
