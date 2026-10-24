@@ -17,7 +17,7 @@ test("workspace and monitor models keep monitor ownership explicit", () => {
   assert.ok(Monitor.schema.indexes().some(([keys]) => keys.workspace_id === 1 && keys.updatedAt === -1));
 });
 
-test("monitor schema rejects out-of-range intervals, timeouts, names, methods, URLs, and unsafe record paths", () => {
+test("monitor schema rejects out-of-range intervals, timeouts, names, methods, URLs, and unsafe record paths", async () => {
   const valid = {
     workspace_id: new Workspace()._id,
     name: "Health API",
@@ -34,8 +34,10 @@ test("monitor schema rejects out-of-range intervals, timeouts, names, methods, U
     [{ ...valid, records_field: "data.__proto__.items" }, "records_field"],
   ];
   for (const [data, field] of invalidCases) {
-    const error = new Monitor(data).validateSync();
-    assert.ok(error?.errors[field], `expected a schema error for ${field}`);
+    await assert.rejects(new Monitor(data).validate(), (error) => {
+      assert.ok(error?.errors[field], `expected a schema error for ${field}`);
+      return true;
+    });
   }
 });
 

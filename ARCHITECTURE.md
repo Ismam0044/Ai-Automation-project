@@ -25,7 +25,7 @@ The app accepts one or more API check objects. The backend validates and evaluat
 
 ## Request flow: `POST /monitor` to stored alert
 
-The system evaluates API check results it receives, either from the sample JSON file or through `POST /monitor`. It does not poll external APIs itself; section 5 of `Ai Automation Task md.md` defines those input methods.
+The sample loader and `POST /monitor` evaluate API check results submitted by a caller, as described in section 5 of `Ai Automation Task md.md`. Separately, the workspace monitor feature polls the public endpoints that users configure, using the local scheduler and safe fetcher.
 
 1. A caller sends a JSON array to `POST /monitor` (for example, the loader script or `curl`).
 2. Express parses JSON with the configured body limit. Middleware rejects a non-array or too-large batch with a JSON error.

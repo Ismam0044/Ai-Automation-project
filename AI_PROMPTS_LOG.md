@@ -793,3 +793,10 @@ This file records the user's project instructions and prompts as requested. It w
 > use gsap and lemnis
 >
 > **Result:** Restored GSAP `3.15.0` with `@gsap/react` `2.1.2` for a short staggered hero entrance, and Lenis `1.3.27` for smooth scrolling. Both honor reduced-motion preferences; React effects and GSAP context clean up on unmount. Updated client dependencies, lockfile, and README.
+
+
+## 2026-10-25 ? Fix project problems
+
+> fix the problems
+>
+> **Result:** Corrected the architecture description so it distinguishes submitted `/monitor`/sample checks from scheduled workspace monitor polling. Replaced the deprecated Mongoose `validateSync()` call in the monitor schema test with async validation. Confirmed `break-words` is a valid Tailwind utility; no CSS change was needed for that selection.
