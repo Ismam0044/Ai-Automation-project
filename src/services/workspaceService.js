@@ -1,31 +1,66 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { Workspace } from "../models/workspace.js";
+
+const MAX_WORKSPACE_KEYS = 10;
 
 function hashAccessKey(accessKey) {
   return createHash("sha256").update(accessKey).digest("hex");
 }
 
+function constantTimeKeyMatch(storedHashes, accessKey) {
+  const candidate = Buffer.from(hashAccessKey(accessKey), "hex");
+  let matched = 0;
+  for (const storedHash of storedHashes) {
+    const stored = Buffer.from(storedHash, "hex");
+    const equal = stored.length === candidate.length && timingSafeEqual(stored, candidate);
+    matched |= Number(equal);
+  }
+  return matched === 1;
+}
+
 export function createWorkspaceService({ WorkspaceModel = Workspace } = {}) {
+  function keyQuery(workspaceId) {
+    return WorkspaceModel.findById(workspaceId).select("+access_key_hashes");
+  }
+
   async function createWorkspace(name) {
     const accessKey = randomBytes(32).toString("base64url");
     const workspace = await WorkspaceModel.create({
       name,
-      access_key_hash: hashAccessKey(accessKey),
+      access_key_hashes: [hashAccessKey(accessKey)],
+      last_active_at: new Date(),
     });
     return { workspace, accessKey };
   }
 
   async function authenticateWorkspace(workspaceId, accessKey) {
-    if (!accessKey) return null;
-    return WorkspaceModel.findOne({
-      _id: workspaceId,
-      access_key_hash: hashAccessKey(accessKey),
-    }).select("_id");
+    if (typeof accessKey !== "string" || accessKey.length > 128) return null;
+    const workspace = await keyQuery(workspaceId);
+    if (!workspace || !constantTimeKeyMatch(workspace.access_key_hashes ?? [], accessKey)) return null;
+    return WorkspaceModel.findOneAndUpdate(
+      { _id: workspaceId, access_key_hashes: hashAccessKey(accessKey) },
+      { $set: { last_active_at: new Date() } },
+      { new: true },
+    ).select("_id name last_active_at");
   }
 
-  return { createWorkspace, authenticateWorkspace };
+  async function addAccessKey(workspaceId) {
+    const accessKey = randomBytes(32).toString("base64url");
+    const workspace = await WorkspaceModel.findByIdAndUpdate(
+      workspaceId,
+      {
+        $push: { access_key_hashes: { $each: [hashAccessKey(accessKey)], $slice: -MAX_WORKSPACE_KEYS } },
+        $set: { last_active_at: new Date() },
+      },
+      { new: true, runValidators: true },
+    ).select("_id name last_active_at");
+    return workspace ? { workspace, accessKey } : null;
+  }
+
+  return { createWorkspace, authenticateWorkspace, addAccessKey };
 }
 
 const defaultService = createWorkspaceService();
 export const createWorkspace = defaultService.createWorkspace;
 export const authenticateWorkspace = defaultService.authenticateWorkspace;
+export const addWorkspaceAccessKey = defaultService.addAccessKey;

@@ -397,7 +397,7 @@ test("PATCH resolve succeeds, unknown id is 404, and malformed id is 400", async
   });
 });
 
-test("workspace provisioning returns a bearer key once and validates the workspace name", async () => {
+test("workspace provisioning sets a secure HTTP-only cookie and reveals keys only by explicit request", async () => {
   const workspaceId = "a".repeat(24);
   const accessKey = "k".repeat(43);
   const workspaceService = {
@@ -405,7 +405,7 @@ test("workspace provisioning returns a bearer key once and validates the workspa
     async authenticateWorkspace(id, key) { return id === workspaceId && key === accessKey ? { _id: id } : null; },
   };
 
-  await withServer({ workspaceService }, async (base) => {
+  await withServer({ workspaceService, monitorSettings: { nodeEnv: "production" } }, async (base) => {
     const invalid = await fetch(`${base}/workspaces`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "  " }),
     });
@@ -418,8 +418,20 @@ test("workspace provisioning returns a bearer key once and validates the workspa
     assert.equal(created.status, 201);
     assert.deepEqual(await created.json(), {
       workspace: { id: workspaceId, name: "Private team" },
-      access_key: accessKey,
     });
+    const cookie = created.headers.get("set-cookie");
+    assert.match(cookie, new RegExp(`workspace_${workspaceId}=${accessKey}`));
+    assert.match(cookie, /HttpOnly/);
+    assert.match(cookie, /SameSite=Lax/);
+    assert.match(cookie, /Secure/);
+    assert.match(cookie, new RegExp(`Path=/workspaces/${workspaceId}`));
+
+    const cli = await fetch(`${base}/workspaces`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-return-workspace-key": "true" },
+      body: JSON.stringify({ name: "CLI team" }),
+    });
+    assert.equal((await cli.json()).access_key, accessKey);
   });
 });
 
@@ -470,8 +482,25 @@ test("workspace monitor CRUD requires its bearer key and scopes every operation"
     const monitor = (await created.json()).monitor;
     assert.equal(monitor.workspace_id, workspaceId);
 
+    const invalidMonitors = [
+      { name: "x".repeat(101), url: "https://api.example.org" },
+      { name: "URL", url: "https://api.example.org", interval_seconds: "60" },
+      { name: "URL", url: "https://api.example.org", interval_seconds: 59 },
+      { name: "URL", url: "https://api.example.org", timeout_ms: 30001 },
+      { name: "URL", url: "https://api.example.org", records_field: "data.__proto__.items" },
+      { name: "URL", url: "https://api.example.org", method: "TRACE" },
+    ];
+    for (const invalidBody of invalidMonitors) {
+      const invalid = await fetch(`${base}${path}`, { method: "POST", headers, body: JSON.stringify(invalidBody) });
+      assert.equal(invalid.status, 400, JSON.stringify(invalidBody));
+      assert.equal((await invalid.json()).error.code, "INVALID_MONITOR");
+    }
+    assert.equal(records.length, 1, "invalid monitor definitions are not persisted");
+
     const listed = await fetch(`${base}${path}`, { headers });
     assert.equal((await listed.json()).monitors.length, 1);
+    const cookieListed = await fetch(`${base}${path}`, { headers: { cookie: `workspace_${workspaceId}=${accessKey}` } });
+    assert.equal(cookieListed.status, 200, "browser cookie authentication is accepted alongside bearer authentication");
 
     const fetched = await fetch(`${base}${path}/${monitorId}`, { headers });
     assert.equal((await fetched.json()).monitor.name, "Public API");
@@ -494,6 +523,110 @@ test("workspace monitor CRUD requires its bearer key and scopes every operation"
     assert.deepEqual(await deleted.json(), { deleted: true, monitor_id: monitorId });
     const missing = await fetch(`${base}${path}/${monitorId}`, { headers });
     assert.equal(missing.status, 404);
+  });
+});
+
+test("workspace transfer links require a confirmation POST, issue a cookie, expire, and are single use", async () => {
+  const workspaceId = "a".repeat(24);
+  const initialKey = "i".repeat(43);
+  const deviceKey = "d".repeat(43);
+  const linkToken = "t".repeat(43);
+  let consumed = false;
+  const workspaceService = {
+    async createWorkspace() { throw new Error("not used"); },
+    async authenticateWorkspace(id, key) { return id === workspaceId && key === initialKey ? { _id: id } : null; },
+    async addAccessKey(id) { return id === workspaceId ? { workspace: { _id: id }, accessKey: deviceKey } : null; },
+  };
+  const workspaceAccessLinkService = {
+    async create(id, ttlMinutes) {
+      assert.equal(id, workspaceId);
+      assert.equal(ttlMinutes, 15);
+      return { token: linkToken, expiresAt: new Date(Date.now() + 900_000) };
+    },
+    async consume(id, token) {
+      if (id !== workspaceId || token !== linkToken || consumed) return null;
+      consumed = true;
+      return { workspace_id: id };
+    },
+  };
+
+  await withServer({ workspaceService, workspaceAccessLinkService }, async (base) => {
+    const created = await fetch(`${base}/workspaces/${workspaceId}/access-links`, {
+      method: "POST", headers: { authorization: `Bearer ${initialKey}` },
+    });
+    assert.equal(created.status, 201);
+    const link = await created.json();
+    const accessUrl = new URL(link.access_link);
+    assert.equal(accessUrl.pathname, `/workspaces/${workspaceId}/open`);
+    assert.equal(accessUrl.searchParams.get("token"), linkToken);
+
+    const open = await fetch(`${base}${accessUrl.pathname}${accessUrl.search}`);
+    assert.equal(open.status, 200);
+    assert.match(await open.text(), /method="post" action=/);
+    assert.equal(consumed, false, "a link scanner's GET does not consume the one-time token");
+
+    const claim = await fetch(`${base}/workspaces/${workspaceId}/claim`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ token: linkToken }),
+      redirect: "manual",
+    });
+    assert.equal(claim.status, 303);
+    assert.equal(claim.headers.get("location"), "/");
+    assert.match(claim.headers.get("set-cookie"), new RegExp(`workspace_${workspaceId}=${deviceKey}`));
+    assert.match(claim.headers.get("set-cookie"), /HttpOnly/);
+
+    const repeated = await fetch(`${base}/workspaces/${workspaceId}/claim`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ token: linkToken }),
+    });
+    assert.equal(repeated.status, 410);
+  });
+});
+
+test("workspace and monitor creation limits are configurable and return the standard 429 error", async () => {
+  const workspaceId = "a".repeat(24);
+  const accessKey = "k".repeat(43);
+  const workspaceService = {
+    async createWorkspace(name) { return { workspace: { _id: workspaceId, name }, accessKey }; },
+    async authenticateWorkspace(id, key) { return id === workspaceId && key === accessKey ? { _id: id } : null; },
+  };
+  const monitorRepository = {
+    async create(_workspaceId, data) { return { _id: "b".repeat(24), ...data }; },
+  };
+
+  await withServer({
+    workspaceService,
+    monitorRepository,
+    publicUrlValidator: async (url) => url,
+    monitorSettings: {
+      workspaceCreateRateLimitMax: 1,
+      workspaceCreateRateLimitWindowMs: 60000,
+      monitorCreateRateLimitMax: 1,
+      monitorCreateRateLimitWindowMs: 60000,
+    },
+  }, async (base) => {
+    const workspaceRequest = () => fetch(`${base}/workspaces`, {
+      method: "POST", headers: { "content-type": "application/json", "x-return-workspace-key": "true" },
+      body: JSON.stringify({ name: "Rate limited" }),
+    });
+    assert.equal((await workspaceRequest()).status, 201);
+    const blockedWorkspace = await workspaceRequest();
+    assert.equal(blockedWorkspace.status, 429);
+    assert.equal((await blockedWorkspace.json()).error.code, "RATE_LIMITED");
+
+    const monitorRequest = () => fetch(`${base}/workspaces/${workspaceId}/monitors`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${accessKey}`, "content-type": "application/json" },
+      body: JSON.stringify({ name: "API", url: "https://api.example.org" }),
+    });
+    assert.equal((await monitorRequest()).status, 201);
+    const blockedMonitor = await monitorRequest();
+    assert.equal(blockedMonitor.status, 429);
+    assert.deepEqual(await blockedMonitor.json(), {
+      error: { code: "RATE_LIMITED", message: "Too many requests. Please try again later." },
+    });
   });
 });
 

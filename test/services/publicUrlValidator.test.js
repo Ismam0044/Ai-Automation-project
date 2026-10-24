@@ -4,9 +4,11 @@ import { createPublicUrlValidator, isPublicAddress } from "../../src/services/pu
 
 test("public address classifier rejects reserved IPv4 and IPv6 ranges", () => {
   for (const address of [
-    "0.0.0.0", "10.0.0.1", "100.64.0.1", "127.0.0.1", "169.254.169.254",
-    "172.16.0.1", "192.168.1.1", "198.18.0.1", "224.0.0.1", "255.255.255.255",
-    "::", "::1", "::ffff:192.168.1.1", "fc00::1", "fe80::1", "ff02::1", "2001:db8::1",
+    "0.1.2.3", "10.0.0.1", "100.64.0.1", "127.0.0.1", "169.254.169.254",
+    "172.16.0.1", "192.0.0.1", "192.0.2.1", "192.88.99.1", "192.168.1.1",
+    "198.18.0.1", "198.51.100.1", "203.0.113.1", "224.0.0.1", "240.0.0.1", "255.255.255.255",
+    "::", "::1", "::ffff:192.168.1.1", "::ffff:127.0.0.1", "::ffff:10.0.0.1",
+    "fc00::1", "fd00::1", "fe80::1", "ff02::1", "2001:db8::1",
   ]) assert.equal(isPublicAddress(address), false, address);
 
   for (const address of ["8.8.8.8", "93.184.216.34", "2606:4700:4700::1111", "::ffff:8.8.8.8"]) {
@@ -36,8 +38,11 @@ test("URL validator accepts HTTP(S) hosts only when DNS results are all public",
 test("URL validator rejects local hosts, credentials, unsafe schemes, ports, and direct private IPs", async () => {
   const validator = createPublicUrlValidator({ lookup: async () => [{ address: "93.184.216.34", family: 4 }] });
   for (const url of [
-    "http://localhost/", "http://localhost./", "http://service.local/", "http://intranet/", "http://127.0.0.1/", "http://169.254.169.254/latest/meta-data/",
-    "http://[::1]/", "http://[fc00::1]/", "ftp://public.example.org/", "https://user:pass@public.example.org/",
+    "http://localhost/", "http://localhost./", "http://service.local/", "http://intranet/", "http://127.0.0.1/",
+    "http://2130706433/", "http://0x7f000001/", "http://0177.0.0.1/",
+    "http://169.254.169.254/latest/meta-data/", "http://[::1]/", "http://[fc00::1]/",
+    "ftp://public.example.org/", "gopher://public.example.org/", "https://user:pass@public.example.org/",
     "https://public.example.org:8443/", "file:///etc/passwd", "not a url",
+    `https://public.example.org/${"x".repeat(2050)}`,
   ]) await assert.rejects(validator(url), TypeError, url);
 });

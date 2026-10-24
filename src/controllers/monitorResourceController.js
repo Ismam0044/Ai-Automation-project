@@ -1,7 +1,7 @@
 import { createHttpError } from "../middleware/httpError.js";
 
 const OBJECT_ID_PATTERN = /^[\da-f]{24}$/i;
-const ALLOWED_FIELDS = new Set(["name", "url"]);
+const ALLOWED_FIELDS = new Set(["name", "url", "method", "interval_seconds", "timeout_ms", "records_field"]);
 
 function invalidMonitor(message) {
   return createHttpError(400, "INVALID_MONITOR", message);
@@ -38,6 +38,33 @@ function parseBody(body, { partial = false } = {}) {
       throw invalidMonitor("url must be a non-empty URL string of at most 2048 characters.");
     }
     result.url = body.url.trim();
+  }
+  if (Object.hasOwn(body, "method")) {
+    if (typeof body.method !== "string" || !["GET", "HEAD"].includes(body.method)) {
+      throw invalidMonitor("method must be GET or HEAD.");
+    }
+    result.method = body.method;
+  }
+  if (Object.hasOwn(body, "interval_seconds")) {
+    if (!Number.isInteger(body.interval_seconds) || body.interval_seconds < 60 || body.interval_seconds > 86400) {
+      throw invalidMonitor("interval_seconds must be a whole number from 60 through 86400.");
+    }
+    result.interval_seconds = body.interval_seconds;
+  }
+  if (Object.hasOwn(body, "timeout_ms")) {
+    if (!Number.isInteger(body.timeout_ms) || body.timeout_ms < 100 || body.timeout_ms > 30000) {
+      throw invalidMonitor("timeout_ms must be a whole number from 100 through 30000.");
+    }
+    result.timeout_ms = body.timeout_ms;
+  }
+  if (Object.hasOwn(body, "records_field")) {
+    const value = body.records_field === "" ? null : body.records_field;
+    const pathPattern = /^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$/;
+    if (value !== null && (typeof value !== "string" || value.length > 128 || !pathPattern.test(value)
+        || value.split(".").some((part) => ["__proto__", "prototype", "constructor"].includes(part)))) {
+      throw invalidMonitor("records_field must be null or a safe dotted field path of at most 128 characters.");
+    }
+    result.records_field = value;
   }
   return result;
 }

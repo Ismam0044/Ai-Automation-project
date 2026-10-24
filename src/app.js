@@ -17,6 +17,7 @@ export function createApp({
   alertService,
   llmService,
   workspaceService,
+  workspaceAccessLinkService,
   monitorRepository,
   publicUrlValidator,
   monitorSettings = {},
@@ -34,6 +35,16 @@ export function createApp({
     apiRateLimitWindowMs: env.apiRateLimitWindowMs,
     apiRateLimitMax: env.apiRateLimitMax,
     trustProxy: env.trustProxy,
+    nodeEnv: env.nodeEnv,
+    publicAppUrl: env.publicAppUrl,
+    workspaceCreateRateLimitWindowMs: env.workspaceCreateRateLimitWindowMs,
+    workspaceCreateRateLimitMax: env.workspaceCreateRateLimitMax,
+    monitorCreateRateLimitWindowMs: env.monitorCreateRateLimitWindowMs,
+    monitorCreateRateLimitMax: env.monitorCreateRateLimitMax,
+    maxMonitorsPerWorkspace: env.maxMonitorsPerWorkspace,
+    maxTotalMonitors: env.maxTotalMonitors,
+    workspaceInactivePurgeDays: env.workspaceInactivePurgeDays,
+    workspaceAccessLinkTtlMinutes: env.workspaceAccessLinkTtlMinutes,
     ...monitorSettings,
   };
   if (settings.alertsDefaultPageSize > settings.alertsMaxPageSize) {
@@ -86,10 +97,12 @@ export function createApp({
     alertService,
     llmService,
     workspaceService,
+    workspaceAccessLinkService,
     monitorRepository,
     publicUrlValidator,
     settings,
     logger: appLogger,
+    rateLimits: limits,
   })) {
     app.use(router);
   }

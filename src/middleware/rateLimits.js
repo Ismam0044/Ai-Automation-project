@@ -27,5 +27,13 @@ export function createRateLimiters(settings) {
       windowMs: settings.apiRateLimitWindowMs,
       limit: settings.apiRateLimitMax,
     }),
+    workspaceCreate: makeLimiter({
+      windowMs: settings.workspaceCreateRateLimitWindowMs,
+      limit: settings.workspaceCreateRateLimitMax,
+    }),
+    monitorCreate: makeLimiter({
+      windowMs: settings.monitorCreateRateLimitWindowMs,
+      limit: settings.monitorCreateRateLimitMax,
+    }),
   };
 }

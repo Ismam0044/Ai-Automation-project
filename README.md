@@ -67,6 +67,15 @@ In Windows PowerShell, use `Copy-Item .env.example .env`.
 | `ALERTS_MAX_PAGE_SIZE` | Largest permitted `limit` value | `50` |
 | `GEMINI_DAILY_CALL_LIMIT` | Maximum Gemini request attempts per UTC day across the app | `100` |
 | `TRUST_PROXY` | Trusted reverse-proxy hop count; `0` disables proxy trust | `0` |
+| `PUBLIC_APP_URL` | Public base URL used to build workspace transfer links | `https://<your-app-host>` |
+| `WORKSPACE_CREATE_RATE_LIMIT_WINDOW_MS` | Per-IP workspace creation window | `3600000` (1 hour) |
+| `WORKSPACE_CREATE_RATE_LIMIT_MAX` | Workspaces created per IP per window | `5` |
+| `MONITOR_CREATE_RATE_LIMIT_WINDOW_MS` | Per-IP monitor creation window | `900000` (15 minutes) |
+| `MONITOR_CREATE_RATE_LIMIT_MAX` | Monitors created per IP per window | `30` |
+| `MONITORS_PER_WORKSPACE_MAX` | Maximum monitor records in one workspace | `50` |
+| `MONITORS_TOTAL_MAX` | Maximum monitor records across all workspaces | `1000` |
+| `WORKSPACE_INACTIVE_PURGE_DAYS` | Days of inactivity before a workspace and its monitor/link data are purged | `90` |
+| `WORKSPACE_ACCESS_LINK_TTL_MINUTES` | Lifetime of a single-use workspace transfer link | `15` |
 | `LOG_LEVEL` | Pino log level | `info` |
 
 The current values are listed in `.env.example`. Keep the model name as a value you have confirmed for your Gemini setup; the application does not choose one automatically.
@@ -156,11 +165,12 @@ All endpoints use JSON except `GET /health`. The server returns errors in this f
 
 ### Private workspaces and monitor definitions
 
-Workspaces do not use accounts or passwords. Create one with `POST /workspaces`; the response contains a random bearer key shown only at creation time. Save it somewhere private. The database stores only a SHA-256 hash of the key, so it cannot be retrieved later. Workspace creation and monitor routes use the configured `/workspaces` API rate limit.
+Workspaces do not use accounts or passwords. Create one with `POST /workspaces`; the random key is set in an `HttpOnly`, `SameSite=Lax` cookie (also `Secure` in production). The database stores only a SHA-256 hash of the key, so it cannot be retrieved later. For scripts, request the key explicitly with `X-Return-Workspace-Key: true` and store it privately; send it as `Authorization: Bearer <workspace-key>`. Workspace creation and monitor creation have separate configurable per-IP rate limits.
 
 ```sh
 curl -X POST http://127.0.0.1:3000/workspaces \
   -H 'Content-Type: application/json' \
+  -H 'X-Return-Workspace-Key: true' \
   --data '{"name":"My workspace"}'
 ```
 
@@ -171,7 +181,11 @@ curl -X POST http://127.0.0.1:3000/workspaces \
 }
 ```
 
-All monitor operations require `Authorization: Bearer <workspace-key>` and are scoped to the workspace in the URL. A monitor currently stores only `name` and `url`; the app does not poll or fetch the URL and this API does not create alerts. The existing assessment endpoints (`POST /monitor` and `GET /alerts`) retain their current shared behavior and are not tied to these workspace definitions.
+Browser requests use the cookie automatically; API clients use the bearer header. A one-time device transfer link can be created with `POST /workspaces/:workspaceId/access-links`. Opening its page with GET does not consume it (so link preview scanners cannot use it); submitting its confirmation form consumes it once, then sets a new device cookie. Links expire after `WORKSPACE_ACCESS_LINK_TTL_MINUTES` (15 minutes by default).
+
+Monitor definitions are private to a workspace. A monitor stores `name` (1–100 characters), `url` (up to 2048 characters), `method` (`GET` or `HEAD`, default `GET`), `interval_seconds` (integer 60–86400, default 300), `timeout_ms` (integer 100–30000, default 5000), and optional safe dotted `records_field` (up to 128 characters). Limits default to 50 monitors per workspace and 1000 total. Workspace and its monitor/access-link data are purged after 90 inactive days by default; `WORKSPACE_INACTIVE_PURGE_DAYS` changes that retention. These values are configurable in `.env` using the table above.
+
+The app validates monitor URLs before saving: only HTTP/HTTPS on standard ports, without credentials, with public DNS addresses only. It does not poll or fetch the URL, and this API does not create alerts. The existing assessment endpoints (`POST /monitor` and `GET /alerts`) retain their current shared behavior and are not tied to these workspace definitions.
 
 | Method and path | Purpose | Request body |
 | --- | --- | --- |
@@ -190,7 +204,7 @@ curl -X POST http://127.0.0.1:3000/workspaces/<workspace-id>/monitors \
   --data '{"name":"Public API","url":"https://api.example.org/health"}'
 ```
 
-The monitor URL guard allows only HTTP or HTTPS on standard ports, rejects credentials and local hostnames, and resolves the host before saving. Every returned IP address must be public; loopback, private, link-local, reserved, and documentation ranges are rejected. This validation does not make an HTTP request to the supplied URL. If a future scheduler fetches monitors, it must repeat these checks immediately before connecting and pin the checked DNS result to prevent DNS rebinding.
+The monitor URL guard allows only HTTP or HTTPS on standard ports, rejects credentials and local hostnames, and resolves the host before saving. Blocked IPv4 ranges include `0/8`, `10/8`, `100.64/10`, `127/8`, `169.254/16`, `172.16/12`, `192.0.0/24`, `192.0.2/24`, `192.88.99/24`, `192.168/16`, `198.18/15`, `198.51.100/24`, `203.0.113/24`, multicast `224/4`, and reserved `240/4`. IPv6 only allows global unicast `2000::/3`, with special-purpose/documentation ranges excluded; IPv4-mapped IPv6 is checked against the IPv4 rules. Every DNS answer must be public, including when a hostname returns multiple addresses. This validation does not make an HTTP request to the supplied URL. If a future scheduler fetches monitors, it must repeat these checks immediately before connecting and pin the checked DNS result to prevent DNS rebinding.
 
 ### `POST /monitor`
 

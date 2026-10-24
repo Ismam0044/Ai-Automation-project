@@ -526,3 +526,22 @@ This file records the user's project instructions and prompts as requested. It w
 > Do not start any other phase. Explain what you built in simple words and wait for my approval.
 
 **Result:** Added active/resolved alert filtering and pagination, frontend search and severity controls, Helmet CSP headers, per-IP rate limits, and a MongoDB-backed daily Gemini call cap that falls back without blocking alert persistence. Added mock-backed tests and documented the settings and API behavior.
+
+## 2026-10-24 - Workspace security and monitor validation review
+
+> Before I approve this phase, answer each point below with the file and line where it is implemented, or say clearly that it is missing. Then fix anything missing. Do not touch .env, do not print secrets, do not run git commit or git push.
+>
+> 1. Browsers: is the workspace secret set in an httpOnly, sameSite cookie (secure in production), and is the bearer header also accepted? Is the secret compared in constant time?
+> 2. Is there a one time, expiring workspace link for opening the workspace on another device? Is it single use?
+> 3. Limits: monitors per workspace, total monitors, and rate limits on creating workspaces and monitors. List the defaults and the environment settings.
+> 4. Is there a purge of inactive workspaces and all their data after a configurable number of days?
+> 5. Validation: is every monitor field validated with a schema (types, ranges, interval minimum 60, timeout maximum, name length, records_field format)?
+> 6. SSRF guard: show the list of blocked ranges and confirm each one has a test: 0.0.0.0/8, 127.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 169.254.0.0/16 (including the cloud metadata address 169.254.169.254), 172.16.0.0/12, 192.168.0.0/16, 198.18.0.0/15, multicast and reserved IPv4, ::1, ::, fc00::/7, fe80::/10, multicast IPv6, and IPv4 mapped IPv6 such as ::ffff:127.0.0.1 and ::ffff:10.0.0.1.
+> 7. Hostname and URL tricks: tests for localhost, names ending in a dot, URLs written as decimal, hex or octal IPs, URLs with credentials, a different port, a non http scheme (file, ftp, gopher), very long URLs, and a hostname that resolves to a mix of public and private addresses (must be rejected).
+> 8. List the names of the 8 new tests.
+> 9. Tell me the exact PowerShell commands I can run myself to create a workspace, add a monitor, list monitors, and try to add a blocked URL such as http://127.0.0.1:3000/health and http://169.254.169.254. Do not run them yourself.
+> 10. Confirm that no code in this phase makes a network request to a monitor URL.
+>
+> Fix gaps with tests, run the full suite and show the real output. Log this prompt in AI_PROMPTS_LOG.md. Do not start any other phase. Wait for my approval.
+
+**Result:** Audited workspace auth, access links, quotas, purge behavior, monitor schema validation, and SSRF protection; added strict integer checks and expanded blocked-address tests. Updated README usage/settings and verified the full test suite.
