@@ -853,3 +853,11 @@ Result: Found the service/model field mismatch, populated and required the legac
 > 4. Log this prompt in AI_PROMPTS_LOG.md. Wait for my approval.
 
 Result: Added private-target startup/health reporting and loopback-specific configuration guidance, taught the stress verifier to print exact local fix commands for skipped loopback tests, removed response headers from request logs, and changed client errors to warning logs without stacks while retaining sanitized 5xx errors.
+
+## 2026-10-25 — User prompt: local end-to-end proof runner
+
+> Branch v2. Do not read or modify .env, do not change any setting, do not print secrets or tokens, do not commit or push. Do not contact Atlas or Gemini from your environment.
+>
+> Add scripts/verify/prove.js and npm script prove. I will run it against the live app on http://127.0.0.1:3000 with the mock on 4010. It runs: health and private_targets, the section 5 example twice (created then updated, one alert, count rising), a real LLM message_source report for the alerts it creates, the workspace monitor failure and automatic recovery flow from the mock, the unsafe address rejections, and the 400 cases. It prints a Pass, Fail or Skipped table with one line of evidence each and writes PROOF.md (no secrets, no tokens, timestamp included) with the same table. Fail clearly if the server is not reachable. Add tests for its helpers with mocked fetch, run npm test, show the real output, and log this prompt in AI_PROMPTS_LOG.md. Wait for my approval.
+
+Result: Added the local-only prove CLI, safe table/report helpers, fail-fast server reachability result, sample create/update and LLM source checks, mock-backed workspace failure/recovery workflow, URL rejection and 400 cases, best-effort cleanup, and mocked-fetch tests. The CLI was not run against the live app.

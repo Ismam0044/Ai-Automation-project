@@ -15,6 +15,7 @@
     "repair:workspaces": "node scripts/repair-workspaces.js",
     "verify:live": "node scripts/verify/live.js",
     "verify:stress": "node scripts/verify/stress.js",
+    "prove": "node scripts/verify/prove.js",
     "test": "node --test",
     "predev": "npm --prefix client run build"
   },
