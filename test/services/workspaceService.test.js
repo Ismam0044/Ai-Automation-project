@@ -4,9 +4,27 @@ import { createWorkspaceService } from "../../src/services/workspaceService.js";
 import { createMonitorRepository } from "../../src/services/monitorRepository.js";
 import { Monitor } from "../../src/models/monitor.js";
 import { Workspace } from "../../src/models/workspace.js";
+import { WorkspaceAccessLink } from "../../src/models/workspaceAccessLink.js";
+import { Alert } from "../../src/models/alert.js";
+import { GeminiDailyUsage } from "../../src/models/geminiDailyUsage.js";
 
 test("workspace and monitor models keep monitor ownership explicit", () => {
   assert.equal(Workspace.schema.path("access_key_hashes").options.select, false);
+  assert.equal(Workspace.schema.path("access_key_hash").options.required, true);
+  assert.equal(Workspace.schema.path("access_key_hash").options.select, false);
+  const accessKeyIndex = Workspace.schema.indexes().find(([keys]) => Object.hasOwn(keys, "access_key_hash"));
+  assert.deepEqual(accessKeyIndex[0], { access_key_hash: 1 });
+  assert.equal(accessKeyIndex[1].unique, true);
+  assert.deepEqual(accessKeyIndex[1].partialFilterExpression, { access_key_hash: { $type: "string" } });
+  for (const schema of [Workspace.schema, WorkspaceAccessLink.schema, Alert.schema, GeminiDailyUsage.schema]) {
+    for (const [keys, options] of schema.indexes()) {
+      if (!options.unique) continue;
+      const indexedPaths = Object.keys(keys);
+      const hasPartialFilter = Boolean(options.partialFilterExpression);
+      const allPathsRequired = indexedPaths.every((path) => schema.path(path)?.isRequired);
+      assert.ok(hasPartialFilter || allPathsRequired, `unique index on ${indexedPaths.join(",")} must be partial or required`);
+    }
+  }
   assert.equal(Monitor.schema.path("workspace_id").options.ref, "Workspace");
   assert.equal(Monitor.schema.path("workspace_id").isRequired, true);
   assert.ok(Monitor.schema.path("name"));
@@ -65,6 +83,55 @@ test("workspace service returns an unguessable key once and stores only its hash
   assert.notDeepEqual(saved.access_key_hashes, [accessKey]);
   assert.deepEqual(await service.authenticateWorkspace(workspace._id, accessKey), { _id: saved._id });
   assert.equal(await service.authenticateWorkspace(workspace._id, "wrong-key"), null);
+});
+
+test("workspace creation populates the legacy unique hash and avoids duplicate null inserts", async () => {
+  const oldNullIndexValues = new Set();
+  const insertUsingOldModelShape = (document) => {
+    const value = document.access_key_hash ?? null;
+    if (oldNullIndexValues.has(value)) throw Object.assign(new Error("E11000 duplicate key access_key_hash: null"), { code: 11000 });
+    oldNullIndexValues.add(value);
+  };
+  insertUsingOldModelShape({ name: "legacy first insert", access_key_hashes: ["hash-one"] });
+  assert.throws(() => insertUsingOldModelShape({ name: "legacy second insert", access_key_hashes: ["hash-two"] }),
+    (error) => error.code === 11000 && /access_key_hash: null/.test(error.message));
+
+  const indexedValues = new Set();
+  const inserted = [];
+  const model = {
+    async create(document) {
+      const indexedValue = document.access_key_hash ?? null;
+      if (indexedValues.has(indexedValue)) throw Object.assign(new Error("E11000 duplicate key access_key_hash: null"), { code: 11000 });
+      indexedValues.add(indexedValue);
+      inserted.push(document);
+      return { _id: String(inserted.length).padStart(24, "0"), name: document.name };
+    },
+  };
+  const service = createWorkspaceService({ WorkspaceModel: model });
+  const first = await service.createWorkspace("First workspace");
+  const second = await service.createWorkspace("Second workspace");
+
+  assert.equal(inserted.length, 2);
+  for (const [index, record] of inserted.entries()) {
+    assert.match(record.access_key_hash, /^[a-f\d]{64}$/);
+    assert.deepEqual(record.access_key_hashes, [record.access_key_hash]);
+    assert.notEqual(record.access_key_hash, index === 0 ? first.accessKey : second.accessKey);
+  }
+  assert.notEqual(inserted[0].access_key_hash, inserted[1].access_key_hash);
+});
+
+test("adding a workspace key also refreshes the compatibility hash before persistence", async () => {
+  let captured;
+  const model = {
+    findByIdAndUpdate(_id, update) {
+      captured = update;
+      return { select: async () => ({ _id: "workspace-id", name: "Private" }) };
+    },
+  };
+  const { accessKey } = await createWorkspaceService({ WorkspaceModel: model }).addAccessKey("workspace-id");
+  assert.match(captured.$set.access_key_hash, /^[a-f\d]{64}$/);
+  assert.equal(captured.$push.access_key_hashes.$each[0], captured.$set.access_key_hash);
+  assert.notEqual(captured.$set.access_key_hash, accessKey);
 });
 
 test("monitor repository scopes every CRUD operation to its workspace", async () => {

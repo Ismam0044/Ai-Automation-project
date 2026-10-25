@@ -25,9 +25,11 @@ export function createWorkspaceService({ WorkspaceModel = Workspace } = {}) {
 
   async function createWorkspace(name) {
     const accessKey = randomBytes(32).toString("base64url");
+    const accessKeyHash = hashAccessKey(accessKey);
     const workspace = await WorkspaceModel.create({
       name,
-      access_key_hashes: [hashAccessKey(accessKey)],
+      access_key_hash: accessKeyHash,
+      access_key_hashes: [accessKeyHash],
       last_active_at: new Date(),
     });
     return { workspace, accessKey };
@@ -62,11 +64,12 @@ export function createWorkspaceService({ WorkspaceModel = Workspace } = {}) {
 
   async function addAccessKey(workspaceId) {
     const accessKey = randomBytes(32).toString("base64url");
+    const accessKeyHash = hashAccessKey(accessKey);
     const workspace = await WorkspaceModel.findByIdAndUpdate(
       workspaceId,
       {
-        $push: { access_key_hashes: { $each: [hashAccessKey(accessKey)], $slice: -MAX_WORKSPACE_KEYS } },
-        $set: { last_active_at: new Date() },
+        $set: { access_key_hash: accessKeyHash, last_active_at: new Date() },
+        $push: { access_key_hashes: { $each: [accessKeyHash], $slice: -MAX_WORKSPACE_KEYS } },
       },
       { returnDocument: "after", runValidators: true },
     ).select("_id name last_active_at");

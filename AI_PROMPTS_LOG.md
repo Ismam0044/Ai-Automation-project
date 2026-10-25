@@ -829,3 +829,16 @@ Result: Added 12 table-driven stress test files with 50+ cases per area, expande
 
 Additional result: A four-anomaly fallback stress case found that the fallback omitted the fourth type. Removed the three-type slice in src/services/llmService.js; the combined-anomaly stress test now verifies all types appear.
 Verification result: 1,419 stress cases across the 12 requested areas (all area counts >= 50), plus 52 live-verifier helper tests; npm test 1,585 passed / 0 failed; client build succeeded. The live verifier was not run against the local app or database.
+
+## 2026-10-25 — User prompt: workspace access-hash index collision
+
+> Branch v2. Do not read or modify .env, do not change any setting (including GEMINI_MODEL and GEMINI_TIMEOUT_MS), do not print secrets, do not commit or push. Do not contact Atlas or Gemini.
+>
+> POST /workspaces returns 500: E11000 duplicate key on index unique_workspace_access_key_hash, dup key { access_key_hash: null }.
+> 1. Find why a workspace can be inserted without access_key_hash (src/services/workspaceService.js createWorkspace and the Workspace model) and make sure the hash is always set before the insert.
+> 2. Make the unique index partial, so it only applies when access_key_hash is a string. Do the same check for every other unique index on optional fields (link tokens, etc.).
+> 3. Add scripts/repair-workspaces.js and npm script repair:workspaces for me to run. By default it only reports workspaces with no hash and how many monitors each has. With the flag --delete it deletes only workspaces with no hash AND no monitors. Never print keys or hashes.
+> 4. Add tests that reproduce the duplicate-null failure with mocks, and the partial index definition. Run npm test and show the real output.
+> 5. Log this prompt in AI_PROMPTS_LOG.md. Wait for my approval.
+
+Result: Found the service/model field mismatch, populated and required the legacy singular hash alongside the hashed key list, declared a string-only partial unique index, checked all unique model indexes, and added the safe report-first workspace repair CLI with mocked tests.
