@@ -13,6 +13,7 @@
     "build:client": "npm --prefix client run build",
     "check:env": "node scripts/check-env.js",
     "verify:live": "node scripts/verify/live.js",
+    "verify:stress": "node scripts/verify/stress.js",
     "test": "node --test",
     "predev": "npm --prefix client run build"
   },
