@@ -26,6 +26,21 @@ test("private target mode is explicit and limited to loopback demo addresses", a
   await assert.rejects(validator("http://169.254.169.254/"), /public IP addresses/);
 });
 
+test("loopback demo targets explain the disabled setting while other private ranges stay blocked", async () => {
+  const validator = createPublicUrlValidator({ allowPrivateTargets: false });
+  for (const url of ["http://127.0.0.1:4010/healthy", "http://localhost:4010/healthy", "http://[::1]:4010/healthy"]) {
+    await assert.rejects(validator(url), (error) => {
+      assert.equal(error.code, "PRIVATE_TARGETS_DISABLED");
+      assert.match(error.message, /ALLOW_PRIVATE_TARGETS=true/);
+      return true;
+    });
+  }
+  await assert.rejects(validator("http://10.0.0.1:4010/health"), (error) => {
+    assert.notEqual(error.code, "PRIVATE_TARGETS_DISABLED");
+    return true;
+  });
+});
+
 test("URL validator accepts HTTP(S) hosts only when DNS results are all public", async () => {
   const validator = createPublicUrlValidator({
     async lookup(hostname, options) {

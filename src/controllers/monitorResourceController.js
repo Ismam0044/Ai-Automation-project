@@ -113,6 +113,9 @@ export function createMonitorResourceController({
     try {
       return await validatePublicUrl(url);
     } catch (error) {
+      if (error?.code === "PRIVATE_TARGETS_DISABLED") {
+        throw invalidMonitor(error.message);
+      }
       throw invalidMonitor(error.message);
     }
   }

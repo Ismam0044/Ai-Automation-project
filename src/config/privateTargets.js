@@ -10,3 +10,7 @@ export function parseAllowPrivateTargets(value = "false", nodeEnv = "development
   if (nodeEnv === "production" && enabled) throw new Error("ALLOW_PRIVATE_TARGETS cannot be enabled in production");
   return enabled;
 }
+
+export function privateTargetsStartupMessage(enabled) {
+  return enabled ? "Private demo targets: ENABLED (loopback only)" : "Private demo targets: disabled";
+}

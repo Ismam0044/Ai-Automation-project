@@ -14,7 +14,9 @@ import { createWorkspacePurgeService } from "./services/workspacePurgeService.js
 import { createMonitorScheduler } from "./services/monitorScheduler.js";
 import { createMonitorCheckRuntime } from "./services/monitorCheckRuntime.js";
 import { generateAlertMessage } from "./services/llmService.js";
+import { privateTargetsStartupMessage } from "./config/privateTargets.js";
 
+logger.info(privateTargetsStartupMessage(env.allowPrivateTargets));
 try {
   await connectToDatabase(env.mongoUri);
   await Alert.init();

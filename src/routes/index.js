@@ -20,7 +20,7 @@ import { createWorkspaceAccessLinkService } from "../services/workspaceAccessLin
 import { createOptionalWorkspaceAuth } from "../middleware/workspaceAuth.js";
 import { createPublicUrlValidator } from "../services/publicUrlValidator.js";
 import { createAlertRoutes } from "./alertRoutes.js";
-import healthRoutes from "./healthRoutes.js";
+import { createHealthRoutes } from "./healthRoutes.js";
 import { createMonitorRoutes } from "./monitorRoutes.js";
 import { createWorkspaceRoutes } from "./workspaceRoutes.js";
 
@@ -85,7 +85,7 @@ export function createApiRoutes({
   });
 
   const routes = [
-    healthRoutes,
+    createHealthRoutes({ allowPrivateTargets: settings.allowPrivateTargets }),
     createMonitorRoutes({ controller: monitorController, maxBatchSize: settings.maxBatchSize }),
     createAlertRoutes(alertController, createOptionalWorkspaceAuth(effectiveWorkspaceService)),
     createWorkspaceRoutes({

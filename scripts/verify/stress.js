@@ -66,9 +66,14 @@ export async function runStress({ fetchImpl = globalThis.fetch, baseUrl = proces
   };
 
   // Health: ten distinct harmless query variants, exact status and JSON fields.
+  let privateTargets = "unknown";
   for (let i = 1; i <= 10; i += 1) {
     await run("health", `health JSON check ${i}`, 200, `/health?case=${i}`, undefined,
-      (payload) => payload?.status === "ok" && payload?.database === "connected");
+      (payload) => {
+        if (["enabled", "disabled"].includes(payload?.private_targets)) privateTargets = payload.private_targets;
+        return payload?.status === "ok" && payload?.database === "connected"
+          && ["enabled", "disabled"].includes(payload?.private_targets);
+      });
   }
 
   let sample = [];
@@ -168,7 +173,7 @@ export async function runStress({ fetchImpl = globalThis.fetch, baseUrl = proces
     "monitor absent after delete", "monitor check rejected when paused",
   ];
   if (!primary || !demoAvailable) {
-    const reason = !primary ? "workspace setup unavailable" : "requires loopback mock API on port 4010 and ALLOW_PRIVATE_TARGETS=true";
+    const reason = !primary ? "workspace setup unavailable" : "Start node scripts/demo/mock-apis.js on loopback port 4010.";
     for (const name of demoNames) add("monitors", name, "Skipped", reason);
     for (let index = 1; index <= 4; index += 1) add("checks", `demo check/history scenario ${index}`, "Skipped", reason);
   } else {
@@ -182,9 +187,12 @@ export async function runStress({ fetchImpl = globalThis.fetch, baseUrl = proces
       createdMonitors.push({ workspace: primary, id: String(monitor._id) });
       add("monitors", demoNames[0], "Pass", "HTTP 201; loopback monitor saved");
     } else {
-      const unsafeConfig = created?.status === 400;
-      const skipReason = unsafeConfig ? "requires ALLOW_PRIVATE_TARGETS=true in the app process" : "local monitor setup rejected";
-      add("monitors", demoNames[0], unsafeConfig ? "Skipped" : "Fail", `HTTP ${created?.status ?? "network error"}; ${skipReason}`);
+      const privateTargetsDisabled = privateTargets === "disabled" && created?.status === 400
+        && created?.payload?.error?.message?.includes("ALLOW_PRIVATE_TARGETS");
+      const skipReason = privateTargetsDisabled
+        ? "health.private_targets=disabled; fix: $env:ALLOW_PRIVATE_TARGETS='true'; npm.cmd run dev"
+        : "local monitor setup rejected; inspect its safe JSON error";
+      add("monitors", demoNames[0], privateTargetsDisabled ? "Skipped" : "Fail", `HTTP ${created?.status ?? "network error"}; ${skipReason}`);
       for (const name of demoNames.slice(1)) add("monitors", name, "Skipped", skipReason);
       for (let index = 1; index <= 4; index += 1) add("checks", `demo check/history scenario ${index}`, "Skipped", skipReason);
     }

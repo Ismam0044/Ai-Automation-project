@@ -1,7 +1,10 @@
 import { Router } from "express";
-import { healthController } from "../controllers/healthController.js";
+import { createHealthController } from "../controllers/healthController.js";
 
-const router = Router();
-router.get("/health", healthController);
+export function createHealthRoutes({ allowPrivateTargets = false } = {}) {
+  const router = Router();
+  router.get("/health", createHealthController({ allowPrivateTargets }));
+  return router;
+}
 
-export default router;
+export default createHealthRoutes;

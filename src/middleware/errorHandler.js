@@ -1,8 +1,8 @@
+import { redactLogText } from "../config/logger.js";
+
 export function createErrorHandler(logger) {
   return function errorHandler(error, _request, response, next) {
     if (response.headersSent) return next(error);
-
-    logger.error({ err: error }, "Request failed");
 
     let statusCode = Number(error.statusCode ?? error.status);
     if (!Number.isInteger(statusCode) || statusCode < 400 || statusCode > 599) statusCode = 500;
@@ -20,6 +20,12 @@ export function createErrorHandler(logger) {
       statusCode = 413;
       code = "BODY_TOO_LARGE";
       message = "Request body exceeds the configured size limit.";
+    }
+
+    if (statusCode < 500) {
+      logger.warn({ statusCode, code, message: redactLogText(message) }, "Request rejected");
+    } else {
+      logger.error({ statusCode, code, err: error }, "Request failed");
     }
 
     return response.status(statusCode).json({

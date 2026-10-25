@@ -122,7 +122,7 @@ test("GET /health keeps its existing disconnected response shape", async () => {
   await withServer({}, async (base) => {
     const response = await fetch(`${base}/health`);
     assert.equal(response.status, 503);
-    assert.deepEqual(await response.json(), { status: "unavailable", database: "disconnected" });
+    assert.deepEqual(await response.json(), { status: "unavailable", database: "disconnected", private_targets: "disabled" });
   });
 });
 
@@ -134,11 +134,21 @@ test("GET /health reports a connected database as ready", async () => {
     await withServer({}, async (base) => {
       const response = await fetch(`${base}/health`);
       assert.equal(response.status, 200);
-      assert.deepEqual(await response.json(), { status: "ok", database: "connected" });
+      assert.deepEqual(await response.json(), { status: "ok", database: "connected", private_targets: "disabled" });
     });
   } finally {
     mongoose.connection.readyState = previousState;
   }
+});
+
+test("GET /health reports configured private target mode without changing readiness", async () => {
+  await withServer({ monitorSettings: { allowPrivateTargets: true } }, async (base) => {
+    const response = await fetch(`${base}/health`);
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), {
+      status: "unavailable", database: "disconnected", private_targets: "enabled",
+    });
+  });
 });
 
 test("built-client hosting serves static assets and falls back to index for client routes", async () => {

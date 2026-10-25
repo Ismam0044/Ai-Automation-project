@@ -83,7 +83,11 @@ export function createApp({
           method: request.method,
           url: typeof request.url === "string" ? request.url.split("?", 1)[0] : undefined,
         }),
+        res: (response) => ({ statusCode: response.statusCode }),
       },
+      customLogLevel: (_request, response) => response.statusCode >= 500
+        ? "error"
+        : response.statusCode >= 400 ? "warn" : "info",
       customProps: (request) => ({ requestId: request.id }),
     }));
   }

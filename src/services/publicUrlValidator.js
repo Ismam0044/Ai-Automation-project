@@ -113,6 +113,12 @@ function isAllowedPrivateDemoAddress(address) {
   return false;
 }
 
+function privateDemoTargetsDisabled() {
+  const error = new TypeError("Loopback demo targets are disabled. Set ALLOW_PRIVATE_TARGETS=true in development to enable them.");
+  error.code = "PRIVATE_TARGETS_DISABLED";
+  return error;
+}
+
 export function createPublicUrlValidator({ lookup = dnsLookup, allowPrivateTargets = false, returnDetails = false } = {}) {
   return async function validatePublicUrl(input) {
     if (typeof input !== "string" || input.length > 2048) {
@@ -138,8 +144,15 @@ export function createPublicUrlValidator({ lookup = dnsLookup, allowPrivateTarge
     const hostname = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
     const hostnameForCheck = hostname.replace(/\.$/, "");
     const isLoopbackName = hostnameForCheck === "localhost" || hostnameForCheck.endsWith(".localhost");
+    if (!allowPrivateTargets && isLoopbackName) throw privateDemoTargetsDisabled();
+    const directAddressFamily = isIP(hostnameForCheck);
+    if (!allowPrivateTargets && directAddressFamily && isAllowedPrivateDemoAddress(hostnameForCheck)) {
+      throw privateDemoTargetsDisabled();
+    }
+    if (!allowPrivateTargets && parsed.port && parsed.port !== (parsed.protocol === "https:" ? "443" : "80")) {
+      throw new TypeError("Only the standard HTTP and HTTPS ports are allowed.");
+    }
     if (!hostnameForCheck || (!allowPrivateTargets && !isIP(hostnameForCheck) && !hostnameForCheck.includes("."))
-        || (!allowPrivateTargets && isLoopbackName)
         || hostnameForCheck.endsWith(".local") || hostnameForCheck.endsWith(".internal")
         || hostnameForCheck.endsWith(".test") || hostnameForCheck.endsWith(".example")
         || hostnameForCheck.endsWith(".invalid") || hostnameForCheck === "home.arpa"
@@ -147,7 +160,7 @@ export function createPublicUrlValidator({ lookup = dnsLookup, allowPrivateTarge
       throw new TypeError("URL host must resolve only to public IP addresses.");
     }
 
-    const family = isIP(hostnameForCheck);
+    const family = directAddressFamily;
     let addresses;
     if (family) {
       addresses = [hostnameForCheck];
@@ -157,6 +170,9 @@ export function createPublicUrlValidator({ lookup = dnsLookup, allowPrivateTarge
       } catch {
         throw new TypeError("URL host must resolve only to public IP addresses.");
       }
+    }
+    if (!allowPrivateTargets && addresses.some((address) => isAllowedPrivateDemoAddress(address))) {
+      throw privateDemoTargetsDisabled();
     }
     if (addresses.length === 0 || addresses.some((address) => !isPublicAddress(address)
         && !(allowPrivateTargets && (isAllowedPrivateDemoAddress(address) || (isLoopbackName && isIP(address) === 4
