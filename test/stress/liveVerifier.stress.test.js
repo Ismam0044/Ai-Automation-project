@@ -32,6 +32,8 @@ test("live stress verifier builds at least 50 safe rows with mocked fetch and sk
   let monitorSubmissions = 0;
   let workspaceNumber = 0;
   const workspaceRows = [];
+  let activeOccurrence = 0;
+  const sampleAlertId = "0".repeat(24);
   const mockFetch = async (url, options) => {
     const parsed = new URL(url);
     const path = parsed.pathname;
@@ -46,11 +48,12 @@ test("live stress verifier builds at least 50 safe rows with mocked fetch and sk
     }
     if (path === "/monitor" && options.method === "POST") {
       monitorSubmissions += 1;
+      activeOccurrence += 1;
       return { status: 200, async json() { return {
         total_items: 2, healthy_count: 1, failed_items: 0,
         results: [
           { api_name: "PatientDataAPI", status: "healthy", severity: "none", alert_id: null },
-          { api_name: "AppointmentAPI", status: monitorSubmissions === 1 ? "created" : "updated", severity: "critical", alert_id: "0".repeat(24) },
+          { api_name: "AppointmentAPI", status: monitorSubmissions === 1 ? "created" : "updated", severity: "critical", alert_id: sampleAlertId },
         ],
       }; } };
     }
@@ -58,9 +61,13 @@ test("live stress verifier builds at least 50 safe rows with mocked fetch and sk
       const invalid = parsed.searchParams.get("status") === "invalid" || parsed.searchParams.get("severity") === "urgent"
         || ["0", "999"].includes(parsed.searchParams.get("limit")) || ["0", "1.5"].includes(parsed.searchParams.get("page"));
       if (invalid) return { status: 400, async json() { return { error: { code: "INVALID_ALERT_QUERY" } }; } };
-      return { status: 200, async json() { return { alerts: [], pagination: { page: Number(parsed.searchParams.get("page") ?? 1) } }; } };
+      const alerts = activeOccurrence && parsed.searchParams.get("status") !== "resolved"
+        ? [{ _id: sampleAlertId, api_name: "AppointmentAPI", anomaly_types: ["http_status_failure_critical", "records_returned_anomaly", "response_time_critical"], occurrence_count: activeOccurrence, status: "active" }]
+        : [];
+      return { status: 200, async json() { return { alerts, pagination: { page: Number(parsed.searchParams.get("page") ?? 1) } }; } };
     }
     if (/^\/alerts\/[\da-f]{24}\/resolve$/.test(path) && options.method === "PATCH") {
+      activeOccurrence = 0;
       return { status: 200, async json() { return { alert: { status: "resolved" } }; } };
     }
     if (path === "/workspaces" && options.method === "POST") {

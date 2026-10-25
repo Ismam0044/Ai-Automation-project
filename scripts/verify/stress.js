@@ -76,19 +76,43 @@ export async function runStress({ fetchImpl = globalThis.fetch, baseUrl = proces
     const { readFile } = await import("node:fs/promises");
     sample = JSON.parse(await readFile(new URL("../../sample-data/api-responses.json", import.meta.url), "utf8"));
   } catch { /* The named sample cases fail below without exposing file contents. */ }
+  const baseline = await run("alerts", "baseline active alerts loaded", 200, "/alerts", undefined,
+    (payload) => Array.isArray(payload?.alerts));
+  const expectedTypes = ["http_status_failure_critical", "records_returned_anomaly", "response_time_critical"];
+  const priorSampleAlert = baseline?.payload?.alerts?.find((alert) => alert.api_name === "AppointmentAPI"
+    && Array.isArray(alert.anomaly_types)
+    && JSON.stringify([...alert.anomaly_types].sort()) === JSON.stringify(expectedTypes));
+  const baselinePatientAlerts = new Set((baseline?.payload?.alerts ?? [])
+    .filter((alert) => alert.api_name === "PatientDataAPI").map((alert) => String(alert._id)));
+  const baselineOccurrence = Number(priorSampleAlert?.occurrence_count ?? 0);
   let sampleAlertId = null;
+  let initialSampleAlertId = null;
   let sampleAlertCreated = false;
   for (let repeat = 1; repeat <= 2; repeat += 1) {
     const result = await run("anonymous", `assessment sample submission ${repeat}`, 200, "/monitor", { method: "POST", body: sample },
       (payload) => payload?.total_items === 2 && payload?.healthy_count === 1 && payload?.failed_items === 0
         && payload?.results?.find((item) => item.api_name === "PatientDataAPI")?.status === "healthy"
+        && payload?.results?.find((item) => item.api_name === "PatientDataAPI")?.alert_id === null
         && payload?.results?.find((item) => item.api_name === "AppointmentAPI")?.severity === "critical");
     const appointment = result?.payload?.results?.find((item) => item.api_name === "AppointmentAPI");
     if (appointment?.alert_id) {
+      if (repeat === 1) initialSampleAlertId = appointment.alert_id;
       sampleAlertId = appointment.alert_id;
       if (repeat === 1 && appointment.status === "created") sampleAlertCreated = true;
+      if (repeat === 2 && (appointment.status !== "updated" || appointment.alert_id !== initialSampleAlertId)) {
+        add("anonymous", "duplicate sample updates same alert", "Fail", "repeat did not update the matching alert");
+      } else if (repeat === 2) {
+        add("anonymous", "duplicate sample updates same alert", "Pass", "same alert id returned with updated status");
+      }
     }
   }
+  const afterSample = await run("alerts", "duplicate occurrence count and no healthy alert", 200, "/alerts", undefined,
+    (payload) => {
+      if (!Array.isArray(payload?.alerts)) return false;
+      const matching = payload.alerts.filter((alert) => String(alert._id) === sampleAlertId && alert.status === "active");
+      return matching.length === 1 && Number(matching[0]?.occurrence_count) === baselineOccurrence + 2
+        && !payload.alerts.some((alert) => alert.api_name === "PatientDataAPI" && !baselinePatientAlerts.has(String(alert._id)));
+    });
   await run("anonymous", "non-array batch rejected", 400, "/monitor", { method: "POST", body: { invalid: true } },
     (payload) => payload?.error?.code === "INVALID_BATCH");
   await run("anonymous", "empty batch accepted", 200, "/monitor", { method: "POST", body: [] },
