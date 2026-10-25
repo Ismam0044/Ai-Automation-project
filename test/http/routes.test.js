@@ -798,6 +798,27 @@ test("workspace monitor CRUD requires its bearer key and scopes every operation"
   });
 });
 
+test("rejected loopback monitor URL names ALLOW_PRIVATE_TARGETS when the setting is disabled", async () => {
+  const workspaceId = "a".repeat(24);
+  const accessKey = "k".repeat(43);
+  const { createPublicUrlValidator } = await import("../../src/services/publicUrlValidator.js");
+  await withServer({
+    workspaceService: { async authenticateWorkspace(id, key) { return id === workspaceId && key === accessKey ? { _id: id } : null; } },
+    monitorRepository: { async create() { assert.fail("a rejected URL must not be persisted"); } },
+    publicUrlValidator: createPublicUrlValidator({ allowPrivateTargets: false }),
+  }, async (base) => {
+    const response = await fetch(`${base}/workspaces/${workspaceId}/monitors`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${accessKey}`, "content-type": "application/json" },
+      body: JSON.stringify({ name: "Local demo", url: "http://127.0.0.1:4010/healthy" }),
+    });
+    const body = await response.json();
+    assert.equal(response.status, 400);
+    assert.equal(body.error.code, "INVALID_MONITOR");
+    assert.match(body.error.message, /ALLOW_PRIVATE_TARGETS=true/);
+  });
+});
+
 test("workspace transfer links require a confirmation POST, issue a cookie, expire, and are single use", async () => {
   const workspaceId = "a".repeat(24);
   const initialKey = "i".repeat(43);

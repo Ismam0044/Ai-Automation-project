@@ -38,8 +38,8 @@ test("live stress verifier builds at least 50 safe rows with mocked fetch and sk
     const parsed = new URL(url);
     const path = parsed.pathname;
     const payload = options.body ? JSON.parse(options.body) : null;
-    if (parsed.port === "4010") return { status: 404, async json() { return { body: "must not leak" }; } };
-    if (path === "/health") return { status: 200, async json() { return { status: "ok", database: "connected" }; } };
+    if (parsed.port === "4010") return { status: 200, async json() { return { ok: true }; } };
+    if (path === "/health") return { status: 200, async json() { return { status: "ok", database: "connected", private_targets: "disabled" }; } };
     if (path === "/monitor" && options.method === "POST" && !Array.isArray(payload)) {
       return { status: 400, async json() { return { error: { code: "INVALID_BATCH" } }; } };
     }
@@ -92,13 +92,13 @@ test("live stress verifier builds at least 50 safe rows with mocked fetch and sk
         ? { status: 200, async json() { return { monitors: [] }; } }
         : { status: 401, async json() { return { error: { code: "WORKSPACE_ACCESS_REQUIRED" } }; } };
     }
-    if (/\/monitors$/.test(path) && options.method === "POST") return { status: 400, async json() { return { error: { code: "INVALID_MONITOR" } }; } };
+    if (/\/monitors$/.test(path) && options.method === "POST") return { status: 400, async json() { return { error: { code: "INVALID_MONITOR", message: "Loopback demo targets are disabled. Set ALLOW_PRIVATE_TARGETS=true in development to enable them." } }; } };
     return { status: 404, async json() { return { error: { code: "NOT_FOUND" } }; } };
   };
   const result = await runStress({ fetchImpl: mockFetch, baseUrl: "http://localhost:3000" });
   assert.ok(result.rows.length >= 50);
   assert.equal(result.rows.some((row) => row.status === "Fail"), false);
-  assert.ok(result.rows.some((row) => row.status === "Skipped" && row.evidence.includes("ALLOW_PRIVATE_TARGETS")));
+  assert.ok(result.rows.some((row) => row.status === "Skipped" && row.evidence.includes("$env:ALLOW_PRIVATE_TARGETS='true'; npm.cmd run dev")));
   assert.equal(JSON.stringify(result).includes("syntheticKey"), false);
   assert.equal(JSON.stringify(result).includes("synthetic-token"), false);
 });
