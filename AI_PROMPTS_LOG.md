@@ -842,3 +842,14 @@ Verification result: 1,419 stress cases across the 12 requested areas (all area 
 > 5. Log this prompt in AI_PROMPTS_LOG.md. Wait for my approval.
 
 Result: Found the service/model field mismatch, populated and required the legacy singular hash alongside the hashed key list, declared a string-only partial unique index, checked all unique model indexes, and added the safe report-first workspace repair CLI with mocked tests.
+
+## 2026-10-25 — User prompt: private-target visibility and quieter request logging
+
+> Branch v2. Do not read or modify .env, do not change any setting (including GEMINI_MODEL and GEMINI_TIMEOUT_MS), do not print secrets, do not commit or push. Do not contact Atlas or Gemini.
+>
+> 1. Startup prints one line: "Private demo targets: ENABLED (loopback only)" or "disabled". Add a read only "private_targets" field to GET /health. When a monitor URL is rejected only because private targets are disabled, say so and name ALLOW_PRIVATE_TARGETS. In scripts/verify/stress.js read that field and show the exact fix command when scenarios are skipped. Add tests.
+> 2. Make logs quieter: do not log response headers on every request, and log expected 4xx errors as warnings without stack traces. Keep real errors (5xx) with the sanitized message. Add tests.
+> 3. Send the final report: the number of cases per area (the 12 areas, each must be 50 or more), the real npm test summary lines, the defects found with cause and fix, and which live scenarios are skipped and why.
+> 4. Log this prompt in AI_PROMPTS_LOG.md. Wait for my approval.
+
+Result: Added private-target startup/health reporting and loopback-specific configuration guidance, taught the stress verifier to print exact local fix commands for skipped loopback tests, removed response headers from request logs, and changed client errors to warning logs without stacks while retaining sanitized 5xx errors.

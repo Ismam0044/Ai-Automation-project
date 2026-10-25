@@ -168,7 +168,7 @@ test("built-client hosting serves static assets and falls back to index for clie
 
       const health = await fetch(`${base}/health`, { headers: { accept: "text/html" } });
       assert.equal(health.status, 503);
-      assert.deepEqual(await health.json(), { status: "unavailable", database: "disconnected" });
+      assert.deepEqual(await health.json(), { status: "unavailable", database: "disconnected", private_targets: "disabled" });
     });
   } finally {
     await rm(directory, { recursive: true, force: true });

@@ -173,7 +173,11 @@ export async function runStress({ fetchImpl = globalThis.fetch, baseUrl = proces
     "monitor absent after delete", "monitor check rejected when paused",
   ];
   if (!primary || !demoAvailable) {
-    const reason = !primary ? "workspace setup unavailable" : "Start node scripts/demo/mock-apis.js on loopback port 4010.";
+    const reason = !primary
+      ? "workspace setup unavailable"
+      : privateTargets === "enabled"
+        ? "mock unavailable: run node scripts/demo/mock-apis.js"
+        : "mock: node scripts/demo/mock-apis.js; fix: $env:ALLOW_PRIVATE_TARGETS='true'; npm.cmd run dev";
     for (const name of demoNames) add("monitors", name, "Skipped", reason);
     for (let index = 1; index <= 4; index += 1) add("checks", `demo check/history scenario ${index}`, "Skipped", reason);
   } else {

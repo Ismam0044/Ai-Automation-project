@@ -113,10 +113,10 @@ export function createMonitorResourceController({
     try {
       return await validatePublicUrl(url);
     } catch (error) {
-      if (error?.code === "PRIVATE_TARGETS_DISABLED") {
-        throw invalidMonitor(error.message);
-      }
-      throw invalidMonitor(error.message);
+      const message = error?.code === "PRIVATE_TARGETS_DISABLED"
+        ? "Loopback demo targets are disabled. Set ALLOW_PRIVATE_TARGETS=true in development to enable them."
+        : error.message;
+      throw invalidMonitor(message);
     }
   }
 

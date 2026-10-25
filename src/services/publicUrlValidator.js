@@ -137,10 +137,6 @@ export function createPublicUrlValidator({ lookup = dnsLookup, allowPrivateTarge
     if (parsed.username || parsed.password) {
       throw new TypeError("URLs must not contain credentials.");
     }
-    if (!allowPrivateTargets && parsed.port && parsed.port !== (parsed.protocol === "https:" ? "443" : "80")) {
-      throw new TypeError("Only the standard HTTP and HTTPS ports are allowed.");
-    }
-
     const hostname = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
     const hostnameForCheck = hostname.replace(/\.$/, "");
     const isLoopbackName = hostnameForCheck === "localhost" || hostnameForCheck.endsWith(".localhost");
