@@ -800,3 +800,31 @@ This file records the user's project instructions and prompts as requested. It w
 > fix the problems
 >
 > **Result:** Corrected the architecture description so it distinguishes submitted `/monitor`/sample checks from scheduled workspace monitor polling. Replaced the deprecated Mongoose `validateSync()` call in the monitor schema test with async validation. Confirmed `break-words` is a valid Tailwind utility; no CSS change was needed for that selection.
+
+## 2026-10-25 — User prompt: comprehensive stress verification
+
+> Branch v2. Do not read or modify .env, do not change any existing setting (including GEMINI_MODEL and GEMINI_TIMEOUT_MS), do not print secrets, do not commit or push. Do not touch master. Do not contact Atlas or Gemini. Add no dependencies and no features.
+>
+> Goal: prove every function of the app works with at least 50 distinct examples each, including nasty ones.
+>
+> PART A: in-process tests (database, Gemini and network mocked; local test servers allowed). Table driven, one file per area under test/stress/, at least 50 cases per area, each case with a name, input and exact expected output:
+> 1. Detector: thresholds at 2999, 3000, 3001, 4999, 5000, 5001; every status class (1xx to 5xx, 0, negative, strings); records 0, 1, null, missing, NaN, negative, decimals, strings; combined anomalies; wrong types for every field.
+> 2. Batch processing: sizes 0, 1, 2, 20, 100, 101; mixed good and bad items; order preserved; concurrency limit never exceeded; one failing item never stops the rest.
+> 3. Alert service: create, dedupe, occurrence_count, concurrent duplicate keys, resolve, a new alert after resolve, pagination, status filter, severity ordering, invalid ids.
+> 4. LLM service: success, timeout then retry, two failures, empty reply, overlong reply, markdown cleaning, daily cap reached, only the six allowed facts sent, fallback wording for every anomaly type and combination.
+> 5. URL validator and IP classifier: at least 50 URLs and addresses (public and blocked): every private, loopback, link local, carrier grade NAT, multicast and reserved IPv4 range, IPv6 forms including mapped, 6to4, Teredo and NAT64, decimal, hex and octal IPs, credentials, bad schemes, bad ports, long URLs, dotted and trailing dot hosts, mixed DNS answers.
+> 6. Safe fetcher with local test servers: status codes, delays and timeouts, oversized bodies, invalid JSON, redirects (to private and public), arrays, records_field paths, numeric fields, empty bodies, and that no body or full URL is ever logged.
+> 7. Monitor model and API validation: every field with valid and invalid values, limits, quotas, pause, resume, edit, delete.
+> 8. Scheduler and checks: claiming and leases, no overlap, fairness across workspaces, per minute budget, jitter, crash recovery, manual check effects.
+> 9. History and summary: uptime 24h and 7d, average, p95, empty history, single check, all failures, TTL expiry calculation.
+> 10. Auto resolve: 1, 2, 3 healthy checks, failure in between, manual versus scheduled, new alert after recovery.
+> 11. Workspaces and security: key hashing and comparison, cookie flags, link expiry and single use, isolation between workspaces for every route (read, write, delete, alerts, history), the Origin guard for POST, PATCH and DELETE with allowed and forbidden origins, rate limits returning 429.
+> 12. Config parsing: MongoDB URI forms (single host, multi host, srv, trailing slash, bad names, encoded passwords) and that no error ever contains a credential.
+>
+> PART B: scripts/verify/stress.js and npm script verify:stress, which I will run myself against http://localhost:3000 with my real database. Built in fetch only, at least 50 live scenarios across the anonymous API, the alerts API, workspaces, monitors and checks, using the local demo mock server for targets (state clearly which scenarios need ALLOW_PRIVATE_TARGETS and the mock, and skip them with "Skipped" if the setup is missing). Print one table with Pass, Fail or Skipped and one line of evidence per scenario, and a count per area. Never print secrets, bodies or tokens. Clean up what it creates through the API where routes exist, and list what remains. Add tests for its helpers with mocked fetch.
+>
+> Rules: every case must assert an exact expected result, not just "does not crash". Never mark Pass without observed output. If a case reveals a real defect, do not hide it: list it with the failing case, the cause and a proposed fix, and fix it only if the fix is small and obvious, with a test. Report the final number of cases per area (it must be 50 or more), then run npm test and the client build and show the real output. Log this prompt in AI_PROMPTS_LOG.md. Wait for my approval.
+
+Result: Added 12 table-driven stress test files with 50+ cases per area, expanded coverage for alert concurrency and queries, and added the local-only `verify:stress` script plus mocked helper tests. Full suite and client build results are recorded in the completion summary; no external services were contacted.
+
+Additional result: A four-anomaly fallback stress case found that the fallback omitted the fourth type. Removed the three-type slice in src/services/llmService.js; the combined-anomaly stress test now verifies all types appear.

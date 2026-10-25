@@ -5,21 +5,23 @@ import { parseMongoUri, INVALID_DATABASE_MESSAGE, INVALID_URI_MESSAGE } from "..
 const validCases = Array.from({ length: 50 }, (_, index) => {
   const name = `database_${index + 1}`;
   const option = `appName=stress${index + 1}&retryWrites=true`;
+  const query = index % 2 === 0 ? `?${option}` : "";
+  const optionNames = index % 2 === 0 ? ["appName", "retryWrites"] : [];
   const mode = index % 4;
   const uri = mode === 0
-    ? `mongodb://user:p%40ss%2Fword@node${index}.example.net:27017/${name}?${option}`
+    ? `mongodb://user:p%40ss%2Fword@node${index}.example.net:27017/${name}${query}`
     : mode === 1
-      ? `mongodb://user:p%40ss%2Fword@a${index}.example.net:27017,b${index}.example.net:27017,c${index}.example.net:27017/${name}?${option}`
+      ? `mongodb://user:p%40ss%2Fword@a${index}.example.net:27017,b${index}.example.net:27017,c${index}.example.net:27017/${name}${query}`
       : mode === 2
-        ? `mongodb+srv://user:p%40ss%2Fword@cluster${index}.example.net/${name}?${option}`
-        : `mongodb://user:p%40ss%2Fword@node${index}.example.net:27017/${name}/?${option}`;
+        ? `mongodb+srv://user:p%40ss%2Fword@cluster${index}.example.net/${name}${query}`
+        : `mongodb://user:p%40ss%2Fword@node${index}.example.net:27017/${name}/${query}`;
   return { name: `valid URI form ${index + 1}`, input: uri, expected: {
-    uri: mode === 3 ? uri.replace(`/${name}/?`, `/${name}?`) : uri,
+    uri: mode === 3 ? uri.replace(`/${name}/${query}`, `/${name}${query}`) : uri,
     scheme: mode === 2 ? "mongodb+srv" : "mongodb",
     hostCount: mode === 1 ? 3 : 1,
     databaseName: name,
     hadTrailingSlash: mode === 3,
-    optionNames: ["appName", "retryWrites"],
+    optionNames,
   } };
 });
 for (const entry of validCases) {

@@ -46,6 +46,7 @@ export async function runStress({ fetchImpl = globalThis.fetch, baseUrl = proces
   const rows = [];
   const createdWorkspaces = [];
   const createdMonitors = [];
+  let sampleAlertResolved = false;
   const areas = { health: [], anonymous: [], alerts: [], workspaces: [], monitors: [], checks: [] };
   const request = createStressClient(fetchImpl, base);
   const add = (area, name, status, evidence) => {
@@ -182,14 +183,15 @@ export async function runStress({ fetchImpl = globalThis.fetch, baseUrl = proces
       await run("checks", "invalid history pagination is rejected", 400, `${path}/checks?page=0`, { headers: auth }, (payload) => payload?.error?.code === "INVALID_CHECK_QUERY");
       // remove and confirm disappearance; cleanup repeats in finally if either call fails.
       const deleted = await run("monitors", demoNames[13], 200, path, { method: "DELETE", headers: auth }, (payload) => payload?.deleted === true);
-      if (deleted && deleted.status === 200) createdMonitors.length = 0;
+      if (deleted?.status === 200 && deleted.payload?.deleted === true) createdMonitors.length = 0;
       await run("monitors", demoNames[14], 404, path, { headers: auth }, (payload) => payload?.error?.code === "MONITOR_NOT_FOUND");
       await run("monitors", demoNames[15], 404, `${path}/check`, { method: "POST", headers: auth }, (payload) => payload?.error?.code === "MONITOR_NOT_FOUND");
     }
   }
 
   if (sampleAlertCreated && sampleAlertId) {
-    await run("alerts", "resolve created assessment alert", 200, `/alerts/${sampleAlertId}/resolve`, { method: "PATCH" }, (payload) => payload?.alert?.status === "resolved");
+    const resolution = await run("alerts", "resolve created assessment alert", 200, `/alerts/${sampleAlertId}/resolve`, { method: "PATCH" }, (payload) => payload?.alert?.status === "resolved");
+    sampleAlertResolved = resolution?.payload?.alert?.status === "resolved";
     await run("alerts", "resolved assessment alert absent from active list", 200, "/alerts", undefined,
       (payload) => Array.isArray(payload?.alerts) && !payload.alerts.some((item) => String(item._id) === sampleAlertId));
   } else {
@@ -203,9 +205,10 @@ export async function runStress({ fetchImpl = globalThis.fetch, baseUrl = proces
     if (result?.status === 200) createdMonitors.splice(createdMonitors.indexOf(item), 1);
   }
   if (sampleAlertCreated && sampleAlertId) {
-    await request(`/alerts/${encodeURIComponent(sampleAlertId)}/resolve`, { method: "PATCH" }).catch(() => null);
+    const cleanup = await request(`/alerts/${encodeURIComponent(sampleAlertId)}/resolve`, { method: "PATCH" }).catch(() => null);
+    sampleAlertResolved ||= cleanup?.payload?.alert?.status === "resolved";
   }
-  return { rows, areas, remaining: { workspacesWithoutDeleteRoute: createdWorkspaces.length, monitors: createdMonitors.length, sampleAlertResolved: sampleAlertCreated && Boolean(sampleAlertId) } };
+  return { rows, areas, remaining: { workspacesWithoutDeleteRoute: createdWorkspaces.length, monitors: createdMonitors.length, sampleAlertResolved } };
 }
 
 function printResult(result) {

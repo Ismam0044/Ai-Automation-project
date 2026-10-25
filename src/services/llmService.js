@@ -77,7 +77,7 @@ export function buildFallbackMessage(facts) {
   const records = facts?.records_returned;
   const responseTime = finiteNumberOrNull(facts?.response_time_ms);
   const anomalyTypes = Array.isArray(facts?.anomaly_types)
-    ? facts.anomaly_types.filter((type) => typeof type === "string").slice(0, 3)
+    ? facts.anomaly_types.filter((type) => typeof type === "string")
     : [];
   const details = [];
 

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createMonitorScheduler } from "../../src/services/monitorScheduler.js";
 import { createMonitorCheckBudget } from "../../src/services/monitorCheckBudget.js";
+import { createMonitorRepository } from "../../src/services/monitorRepository.js";
 
 const cases = Array.from({ length: 50 }, (_, index) => ({
   name: `workspaces ${index % 9 + 1}, budget ${index % 7 + 1}, case ${index + 1}`,
@@ -43,5 +44,47 @@ for (const entry of cases) {
     assert.equal(releases.length, entry.expected);
     assert.equal(seen.size, entry.expected);
     assert.equal(await scheduler.runDueOnce(), 0);
+  });
+}
+
+for (let index = 1; index <= 50; index += 1) {
+  test(`stress lease and crash recovery: case ${index}`, async () => {
+    let now = new Date(`2026-10-25T00:${String(index % 60).padStart(2, "0")}:00.000Z`);
+    const intervalSeconds = 60 + index;
+    const leaseMs = 10_000 + index;
+    const jitterMs = 1000 + index;
+    const jitter = Math.floor(0.5 * jitterMs);
+    const state = { _id: `monitor-${index}`, workspace_id: `workspace-${index}`, interval_seconds: intervalSeconds,
+      next_check_at: new Date(now.getTime() - 1000), lease_until: null };
+    let claims = 0;
+    const model = {
+      findOne(filter) {
+        const due = state.next_check_at <= filter.next_check_at.$lte;
+        const available = !state.lease_until || state.lease_until <= filter.$or[2].lease_until.$lte;
+        return { sort() { return this; }, lean: async () => due && available ? { ...state } : null };
+      },
+      async findOneAndUpdate(filter, update) {
+        const due = state.next_check_at <= filter.next_check_at.$lte;
+        const available = !state.lease_until || state.lease_until <= filter.$or[2].lease_until.$lte;
+        if (!due || !available) return null;
+        claims += 1;
+        Object.assign(state, update.$set);
+        return { ...state };
+      },
+    };
+    const repository = createMonitorRepository({ MonitorModel: model });
+    const first = await repository.claimDueForWorkspace(state.workspace_id, { now, leaseMs, jitterMs, random: () => 0.5 });
+    assert.equal(first._id, state._id);
+    assert.equal(claims, 1);
+    assert.equal(state.lease_until.getTime(), now.getTime() + leaseMs);
+    assert.equal(state.next_check_at.getTime(), now.getTime() + intervalSeconds * 1000 + jitter);
+    assert.equal(await repository.claimDueForWorkspace(state.workspace_id, { now, leaseMs, jitterMs, random: () => 0.5 }), null);
+    now = new Date(state.next_check_at.getTime() - 1);
+    assert.equal(await repository.claimDueForWorkspace(state.workspace_id, { now, leaseMs, jitterMs, random: () => 0.5 }), null);
+    // A worker crash leaves the lease until its expiry; the monitor becomes claimable once due.
+    now = new Date(state.lease_until.getTime() + intervalSeconds * 1000 + jitter + 1);
+    const recovered = await repository.claimDueForWorkspace(state.workspace_id, { now, leaseMs, jitterMs, random: () => 0.5 });
+    assert.equal(recovered._id, state._id);
+    assert.equal(claims, 2);
   });
 }

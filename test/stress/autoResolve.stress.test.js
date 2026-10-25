@@ -14,7 +14,7 @@ const cases = Array.from({ length: 50 }, (_, index) => {
     consecutiveHealthy = item === "healthy" ? consecutiveHealthy + 1 : 0;
     if (consecutiveHealthy >= 2) { expectedResolutions += 1; consecutiveHealthy = 0; }
   }
-  return { name: `check sequence ${index + 1}`, input: sequence, sequence, expected: {
+  return { name: `check sequence ${index + 1}`, input: sequence, sequence, manual: index % 2 === 0, expected: {
     resolutions: expectedResolutions, saves: sequence.filter((value) => value === "failed").length,
     statuses: sequence.map((value) => value === "healthy" ? "healthy" : "created"),
   } };
@@ -38,6 +38,10 @@ for (const entry of cases) {
       } },
       historyService: { async record() {} },
       monitorRepository: {
+        async findById() { return monitor; },
+        async claimById() { return monitor; },
+        async scheduleNextCheck() {},
+        async releaseLease() {},
         async incrementHealthyCount() { healthy += 1; return { consecutive_healthy_checks: healthy }; },
         async resetHealthyCount() { healthy = 0; },
       },
@@ -52,7 +56,9 @@ for (const entry of cases) {
       logger: { info() {}, warn() {}, error() {} },
     });
     const outputs = [];
-    for (const _item of entry.sequence) outputs.push(await service.run(monitor));
+    for (const _item of entry.sequence) outputs.push(await (entry.manual
+      ? service.runNow("workspace-id", "monitor-id")
+      : service.run(monitor)));
     assert.equal(position, entry.sequence.length);
     assert.equal(resolutions, entry.expected.resolutions);
     assert.equal(saves, entry.expected.saves);

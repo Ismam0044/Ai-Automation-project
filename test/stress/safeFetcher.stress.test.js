@@ -57,7 +57,23 @@ for (const [name, body, records, outcome, recordsField = null, status = 200] of 
       assert.equal(result.records_returned, records);
       assert.equal(result.status_code, status === 504 ? 0 : status);
       assert.equal(lines.length, 1);
-      assert.doesNotMatch(lines[0], /private_query|never_log|synthetic\?/);
+      assert.doesNotMatch(lines[0], /private_query|never_log|synthetic\?|secret response body|\/synthetic/);
     });
   });
 }
+
+test("safe fetcher does not follow redirects to public addresses", async () => {
+  let requests = 0;
+  await withServer((_request, response) => {
+    requests += 1;
+    response.writeHead(302, { location: "https://8.8.8.8/private" });
+    response.end("{}");
+  }, async (url) => {
+    const result = await createSafeFetcher({ allowPrivateTargets: true, logger: silent }).fetchMonitor({
+      _id: "redirect-public", url, timeout_ms: 1000, method: "GET", records_field: null,
+    });
+    assert.equal(result.status_code, 302);
+    assert.equal(result.outcome, "ok");
+    assert.equal(requests, 1);
+  });
+});
