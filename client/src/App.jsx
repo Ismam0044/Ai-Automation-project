@@ -149,7 +149,7 @@ export default function App() {
     scope,
     enabled: view === "alerts" && !workspaceLoading && Boolean(workspace),
   });
-  const [checks, setChecks] = useState("[]");
+  const [checks, setChecks] = useState(assessmentSampleText);
   const sortedAlerts = useMemo(() => [...alerts].sort((left, right) => {
     const severityOrder = (right.severity === "critical" ? 1 : 0) - (left.severity === "critical" ? 1 : 0);
     if (severityOrder) return severityOrder;
